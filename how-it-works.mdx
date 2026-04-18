@@ -1,0 +1,133 @@
+---
+title: 'How agentic-stack works: memory, skills, and protocols'
+description: 'Memory layers, progressive skill loading, enforced protocols, and the feedback loop that turns episodic events into lasting knowledge across every session.'
+keywords: ['agentic-stack', 'architecture', 'memory layers', 'skills', 'protocols', 'dream cycle', 'feedback loop', 'harness-agnostic']
+---
+
+agentic-stack is built on one principle: *the harness is dumb, the knowledge is in files.* Three self-contained modules — Memory, Skills, and Protocols — live inside the `.agent/` folder. Any harness that can read a config file can mount them. When you switch harnesses, the brain travels with you.
+
+## Three modules
+
+### Memory
+
+Memory is divided into four layers. Each has its own retention policy and serves a different purpose in the agent's reasoning.
+
+| Layer | Path | Purpose | Retention |
+|---|---|---|---|
+| **Working** | `memory/working/` | Live task state — what the agent is doing right now | Archived after 2 days |
+| **Episodic** | `memory/episodic/` | What happened in prior runs — JSONL scored by salience | Decays over time; snapshots archived |
+| **Semantic** | `memory/semantic/` | Distilled patterns that outlive individual episodes | Permanent until explicitly rejected |
+| **Personal** | `memory/personal/` | User-specific preferences and conventions | Never merged into semantic |
+
+The agent reads memory in a defined order at session start: `PREFERENCES.md` first (personal), then `WORKSPACE.md` (working), then `DECISIONS.md` and `LESSONS.md` (semantic), then top-k episodic entries by salience. This ordering ensures stable conventions are loaded before context-specific state.
+
+<Note>
+  `LESSONS.md` is rendered automatically from `lessons.jsonl` — never edit it by hand. Use `graduate.py` and `reject.py` to manage its contents.
+</Note>
+
+### Skills
+
+Skills use progressive disclosure to keep context lean. Two lightweight files — `_index.md` and `_manifest.jsonl` — are always in context. A full `SKILL.md` only loads when the task matches the skill's declared triggers.
+
+The five seed skills that ship with agentic-stack:
+
+| Skill | Triggers | Purpose |
+|---|---|---|
+| **skillforge** | "create skill", "new skill", "I keep doing this manually" | Creates new skills from recurring patterns |
+| **memory-manager** | "reflect", "what did I learn", "compress memory" | Reads, scores, and consolidates memory |
+| **git-proxy** | "commit", "push", "branch", "merge", "rebase" | All git operations with safety constraints |
+| **debug-investigator** | "debug", "why is this failing", "investigate" | Systematic reproduce → isolate → hypothesize → verify |
+| **deploy-checklist** | "deploy", "ship", "release", "go live" | Pre-deployment verification with required human approval |
+
+Every skill file includes a self-rewrite hook at the bottom. If a skill fails three or more times within 14 days, `on_failure.py` flags it for rewrite. The hook proposes conservative edits only — it does not auto-apply changes.
+
+### Protocols
+
+Protocols are the contracts between the agent and the outside world.
+
+- **`permissions.md`** — three tiers: allowed, approval-required, and never-allowed. A pre-tool-call hook enforces this before any external tool runs.
+- **`tool_schemas/`** — typed interfaces for every external tool the agent can call.
+- **`delegation.md`** — rules for sub-agent handoff, including what context must be passed and what decisions require the host agent.
+
+## The feedback loop
+
+This is how agentic-stack compounds over time. Each step is mechanical except step 3, which requires deliberate human judgment.
+
+<Steps>
+  <Step title="Skills log to episodic memory">
+    After every significant action, the skill writes a structured entry to `memory/episodic/AGENT_LEARNINGS.jsonl` via `tools/memory_reflect.py`. Each entry carries a salience score.
+  </Step>
+  <Step title="auto_dream.py clusters recurring patterns">
+    The nightly dream cycle loads all episodic entries, clusters them by content similarity (single-linkage Jaccard with bridge merging), and extracts patterns that exceed the salience threshold. It stages candidate lessons as JSON files in `memory/candidates/` and runs a heuristic prefilter to automatically reject obvious junk — entries that are too short or exact duplicates of existing lessons.
+  </Step>
+  <Step title="Host agent reviews candidates">
+    The next session opens with `REVIEW_QUEUE.md` showing the backlog. The host agent — you — reviews staged candidates using the CLI tools. Reviewing in batches surfaces cross-candidate contradictions that would be invisible one-by-one.
+
+    ```bash
+    # list pending candidates, sorted by priority
+    python3 .agent/tools/list_candidates.py
+
+    # accept with rationale (required)
+    python3 .agent/tools/graduate.py <id> --rationale "evidence holds, matches PREFERENCES"
+
+    # reject with reason (required); preserves decision history
+    python3 .agent/tools/reject.py <id> --reason "too specific to generalize"
+
+    # requeue a previously-rejected candidate
+    python3 .agent/tools/reopen.py <id>
+    ```
+  </Step>
+  <Step title="Graduated lessons append to lessons.jsonl">
+    Accepted candidates are written to `memory/semantic/lessons.jsonl` (the source of truth) and rendered to `memory/semantic/LESSONS.md`. Rejected candidates retain their full decision history — recurring churn is visible, not re-reviewed as if it were fresh.
+  </Step>
+  <Step title="Future sessions load relevant lessons automatically">
+    At session start, the agent queries semantic memory for entries relevant to the current task. Accepted lessons surface automatically — no manual lookup required.
+  </Step>
+  <Step title="on_failure.py flags skills for rewrite">
+    If a skill fails three or more times in 14 days, the failure handler flags it. Skillforge can then propose a rewrite based on the failure pattern in episodic memory.
+  </Step>
+  <Step title="git log becomes the agent's autobiography">
+    Because all memory files live in `.agent/memory/`, committing them to version control gives you a full history of what the agent learned, when, and why. `git log .agent/memory/` is the audit trail.
+  </Step>
+</Steps>
+
+## The dream cycle in detail
+
+`auto_dream.py` is responsible for the mechanical half of the feedback loop. It runs six operations in sequence and never touches anything subjective.
+
+<Steps>
+  <Step title="Load episodic entries">
+    Reads all entries from `memory/episodic/AGENT_LEARNINGS.jsonl`.
+  </Step>
+  <Step title="Cluster and extract patterns">
+    Runs `cluster_and_extract()` with a similarity threshold of `0.3`. Patterns with `canonical_salience >= 7.0` are eligible for staging.
+  </Step>
+  <Step title="Stage candidates">
+    Writes eligible patterns as JSON files in `memory/candidates/` via `write_candidates()`.
+  </Step>
+  <Step title="Heuristic prefilter">
+    Calls `heuristic_check()` on each staged candidate. Claims that are too short or exact duplicates of existing lessons are automatically moved to `rejected/`. Everything else requires real judgment from the host agent.
+  </Step>
+  <Step title="Decay and archive">
+    Decays old episodic entries and archives stale workspace files to `episodic/snapshots/`.
+  </Step>
+  <Step title="Write REVIEW_QUEUE.md">
+    Summarises the pending candidate count in `memory/working/REVIEW_QUEUE.md` so the next session immediately sees the backlog.
+  </Step>
+</Steps>
+
+<Warning>
+  `auto_dream.py` never makes git commits, never calls external APIs, and never reasons about content. It is safe to run unattended on a cron schedule. All subjective decisions belong to the host agent.
+</Warning>
+
+## Why the separation matters
+
+Storing context inside the harness creates lock-in. When you switch tools, the AI starts from zero. agentic-stack avoids this by keeping all knowledge in plain files that any harness can read.
+
+The adapter layer is deliberately thin. Claude Code gets a `CLAUDE.md` and a `settings.json` hook file. Cursor gets a `.mdc` rule file. Windsurf gets `.windsurfrules`. The `.agent/` folder is identical in all cases. Swapping the harness means replacing a single config file — nothing in the brain changes.
+
+This also makes the system auditable. Every lesson in semantic memory has a decision record: who accepted it, what rationale was given, and when. Every rejection is preserved with its reason. The history is in plain files, not locked inside a provider's infrastructure.
+
+<Tip>
+  The first few days of use will feel largely stateless. After two weeks of episodic logging and at least one dream cycle review, the agent will start surfacing relevant past lessons automatically.
+</Tip>

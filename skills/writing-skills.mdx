@@ -1,0 +1,133 @@
+---
+title: 'Writing, registering, and maintaining custom skills'
+description: 'How to author a new skill file, fill in the YAML frontmatter, write effective instructions, and register the skill in the index and manifest.'
+keywords: ['custom skills', 'SKILL.md', 'frontmatter', 'skill registration', 'self-rewrite hook', 'triggers', 'constraints', 'agentic-stack']
+---
+
+The skill is the unit of learned behavior in agentic-stack. Good ones compound — they load exactly when needed, enforce their own constraints, and flag themselves for rewrite when they start failing. Bad ones rot — they step on each other's triggers, micromanage the model with brittle command sequences, and never improve. The rules on this page keep you on the right side of that line.
+
+## YAML frontmatter
+
+Every `SKILL.md` starts with a YAML frontmatter block. The manifest generator reads these fields automatically, and the pre-tool-call hook enforces `constraints` at runtime. Every field matters.
+
+<CodeGroup>
+
+```yaml deploy-checklist example
+---
+name: deploy-checklist
+version: 2026-01-01
+triggers: ["deploy", "ship", "release"]
+tools: [bash]
+preconditions: ["all tests passing"]
+constraints: ["requires human approval for production"]
+---
+```
+
+```yaml git-proxy example
+---
+name: git-proxy
+version: 2026-01-01
+triggers: ["commit", "push", "branch", "merge", "rebase", "pull request", "PR"]
+tools: [bash]
+preconditions: [".git exists"]
+constraints: ["never force push to main", "never force push to protected branches", "run tests before push"]
+---
+```
+
+</CodeGroup>
+
+| Field | Type | Purpose |
+|---|---|---|
+| `name` | string | Unique identifier. Must match the directory name under `skills/`. |
+| `version` | date string | ISO date of last substantive edit. Helps track when a skill was last reviewed. |
+| `triggers` | string array | Phrases that cause this skill to load. Case-insensitive substring match against user input. |
+| `tools` | string array | External tools the skill is permitted to invoke. |
+| `preconditions` | string array | Conditions checked before loading. Paths ending in `exists` are verified on disk. |
+| `constraints` | string array | Hard fences enforced by the pre-tool-call hook. The model cannot bypass these. |
+| `category` | string | Optional grouping label (e.g., `meta`, `operations`, `engineering`). |
+
+<Warning>
+Triggers use substring matching, not exact match. Keep them specific enough that they won't fire on unrelated messages. Overlapping triggers between two skills cause both to load simultaneously, which breaks progressive disclosure.
+</Warning>
+
+## Destinations and fences, not driving directions
+
+The most common mistake in skill writing is specifying *how* to do something in too much detail. Command sequences rot when tooling changes. The model improves; your scripts don't.
+
+Write skills that declare where to end up and what lines not to cross — not the exact path to get there.
+
+**Bad — micromanagement:**
+
+```markdown
+1. Run `npm test`. 
+2. Grep for "passed". 
+3. Run `git add -A`. 
+4. Run `git commit -m "fix"`.
+```
+
+**Good — destinations and fences:**
+
+```markdown
+Verify tests pass before committing. Stage specific files (no `-A`).
+Write messages that explain the *why*, not the *what*.
+```
+
+The second form stays true across refactors, language changes, and model upgrades. The first form needs to be updated every time the test runner changes its output format.
+
+<Tip>
+Include 2–3 examples of correct behavior when the intent isn't obvious, and 1 example of a known failure and what was learned from it. Keep the entire `SKILL.md` under 100 lines.
+</Tip>
+
+## The self-rewrite hook
+
+Every skill must end with a self-rewrite hook. This is the section that tells the agent when and how to revise the skill itself. At the system level, `on_failure` flags any skill that fails 3 or more times in 14 days — but the hook gives the skill its own, more immediate improvement trigger.
+
+```markdown
+## Self-rewrite hook
+After every 5 uses OR on any failure:
+1. Read the last N skill-specific episodic entries.
+2. If a new failure mode has appeared, append to `KNOWLEDGE.md`.
+3. If a constraint was violated, escalate to `semantic/LESSONS.md`.
+4. Commit: `skill-update: <name>, <one-line reason>`.
+```
+
+Adapt the trigger condition (number of uses, failure count) to the skill's risk profile. A deploy checklist should rewrite after any rollback. A meta-skill like skillforge can wait for 5 uses.
+
+<Note>
+When a self-rewrite hook fires, propose conservative edits only. Drastic rewrites without evidence from episodic memory introduce new failure modes instead of fixing old ones.
+</Note>
+
+## Registration
+
+<Steps>
+  <Step title="Add to the human-readable index">
+    Open `skills/_index.md` and add an entry with the skill's name, a one-line description, trigger phrases, and any constraints. Follow the format of the existing entries.
+
+    ```markdown
+    ## my-skill
+    What this skill does in one sentence.
+    Triggers: "trigger phrase one", "trigger phrase two"
+    Constraints: describe any hard limits here.
+    ```
+  </Step>
+  <Step title="Append to the machine-readable manifest">
+    Append a single JSON line to `skills/_manifest.jsonl`. The manifest generator and `skill_loader.py` both read this file.
+
+    ```json
+    {"name":"my-skill","version":"2026-01-01","triggers":["trigger phrase one","trigger phrase two"],"tools":["bash"],"preconditions":[],"constraints":["describe constraints here"],"category":"engineering"}
+    ```
+  </Step>
+  <Step title="Log the decision">
+    Append a record to `memory/semantic/DECISIONS.md` explaining why this skill was created — what recurring pattern it captures, and why extending an existing skill wasn't the right answer. This prevents the same decision from being relitigated in a future session.
+  </Step>
+</Steps>
+
+## Anti-patterns
+
+Avoid these when writing skills:
+
+- **Duplicate triggers.** If two skills share a trigger phrase, both load simultaneously. Progressive disclosure breaks and the agent gets conflicting instructions. Check `_index.md` before writing any new triggers.
+- **Procedural step-by-step commands.** The bitter lesson: the model improves faster than your scripts. Write destinations, not itineraries.
+- **Editing `protocols/permissions.md`.** Only humans edit that file. A skill that tries to modify permissions is the exact failure mode the permissions layer exists to prevent.
+- **Promoting a single incident to a lesson.** The self-rewrite hook requires recurrence before escalating to `LESSONS.md`. One data point is noise.
+- **Skills over 100 lines.** If the instructions can't fit in 100 lines, the skill is trying to do too much. Split it.

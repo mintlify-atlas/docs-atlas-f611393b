@@ -1,80 +1,164 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: 'Get started with agentic-stack: install and configure'
+description: 'Install agentic-stack, pick your harness, run the onboarding wizard, and verify your setup — all in under five minutes on macOS, Linux, or Windows.'
+keywords: ['agentic-stack', 'install', 'quickstart', 'onboarding', 'Homebrew', 'PowerShell', 'setup']
 ---
 
-## Get started in three steps
+agentic-stack installs with a single Homebrew tap on macOS and Linux, or a PowerShell script on Windows. After installation, a short onboarding wizard writes your preferences to `.agent/memory/personal/PREFERENCES.md` — the first file your AI reads at the start of every session.
 
-Get your documentation site running locally and make your first customization.
+<Steps>
+  <Step title="Install on macOS or Linux">
+    Tap the repository and install the package. Both lines are required on first install.
 
-### Step 1: Set up your local environment
+    ```bash
+    brew tap codejunkie99/agentic-stack https://github.com/codejunkie99/agentic-stack
+    brew install agentic-stack
+    ```
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    To upgrade an existing install:
 
-### Step 2: Deploy your changes
+    ```bash
+    brew update && brew upgrade agentic-stack
+    ```
+  </Step>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+  <Step title="Install on Windows">
+    On Windows, clone the repository and run the native PowerShell installer directly.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    ```powershell
+    git clone https://github.com/codejunkie99/agentic-stack.git
+    cd agentic-stack
+    .\install.ps1 claude-code C:\path\to\your-project
+    ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    Replace `claude-code` with your harness and the path with your project directory. The PowerShell installer accepts the same flags as the shell script (`-Yes`, `-Reconfigure`, `-Force`).
 
-### Step 3: Go live
+    <Note>
+      The PowerShell installer (`install.ps1`) runs natively. You can also use `install.sh` under Git Bash or WSL.
+    </Note>
+  </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+  <Step title="Alternative: clone-based install">
+    If you prefer not to use Homebrew, clone the repository and run `install.sh` directly.
+
+    ```bash
+    git clone https://github.com/codejunkie99/agentic-stack.git
+    cd agentic-stack && ./install.sh claude-code
+    # adapters: claude-code | cursor | windsurf | opencode | openclaw | hermes | pi | standalone-python
+    ```
+
+    You can pass a target directory as the second argument to install into a project other than the current directory:
+
+    ```bash
+    ./install.sh claude-code /path/to/your-project
+    ```
+  </Step>
+
+  <Step title="Run the onboarding wizard">
+    After the adapter is installed, the wizard runs automatically. It populates `.agent/memory/personal/PREFERENCES.md` and writes feature toggles to `.agent/memory/.features.json`.
+
+    The wizard asks six questions (press Enter to skip any and accept the default):
+
+    | Question | Default |
+    |---|---|
+    | What should I call you? | *(skip)* |
+    | Primary language(s)? | `unspecified` |
+    | Explanation style? | `concise` |
+    | Test strategy? | `test-after` |
+    | Commit message style? | `conventional commits` |
+    | Code review depth? | `critical issues only` |
+
+    There is also one optional feature step:
+
+    | Feature | Default |
+    |---|---|
+    | Enable FTS memory search `[BETA]` | `no` |
+
+    **Wizard flags**
+
+    <CodeGroup>
+      ```bash macOS / Linux
+      # accept all defaults without prompting (CI-safe)
+      agentic-stack claude-code --yes
+
+      # re-run the wizard on an existing project
+      agentic-stack claude-code --reconfigure
+      ```
+
+      ```powershell Windows
+      # accept all defaults without prompting (CI-safe)
+      .\install.ps1 claude-code -Yes
+
+      # re-run the wizard on an existing project
+      .\install.ps1 claude-code -Reconfigure
+      ```
+    </CodeGroup>
+
+    <Tip>
+      You can edit `.agent/memory/personal/PREFERENCES.md` at any time to refine your conventions. Your AI re-reads it at the start of every session.
+    </Tip>
+  </Step>
+
+  <Step title="(Optional) Set up the nightly dream cycle">
+    The dream cycle clusters episodic events into candidate lessons and updates your review queue. Schedule it with cron to run automatically each night.
+
+    ```bash
+    crontab -e
+    ```
+
+    Add this line, replacing the path with your actual project path:
+
+    ```bash
+    0 3 * * * python3 /path/to/project/.agent/memory/auto_dream.py >> /path/to/project/.agent/memory/dream.log 2>&1
+    ```
+
+    `auto_dream.py` resolves paths absolutely and performs only mechanical file operations — clustering, staging, prefiltering, and decay. It makes no git commits, no network calls, and no subjective judgments. Safe to run unattended.
+  </Step>
+</Steps>
+
+## Verify the wiring
+
+Once installed, confirm that the memory files are being read correctly by checking the token budget:
+
+```bash
+python3 .agent/tools/budget_tracker.py "commit and push"
+# outputs: tokens_used, chars, budget, headroom
+```
+
+If `tokens_used` is `0`, the memory files are not being loaded — check that the paths in your harness config point to the correct `.agent/` location.
+
+## What was just installed
+
+The installer copied the `.agent/` brain into your project (if it was not already there) and dropped a harness-specific config file. For Claude Code, that is `CLAUDE.md` and `.claude/settings.json`. For other harnesses, see the table below:
+
+| Harness | Files added to your project |
+|---|---|
+| `claude-code` | `CLAUDE.md`, `.claude/settings.json` |
+| `cursor` | `.cursor/rules/agentic-stack.mdc` |
+| `windsurf` | `.windsurfrules` |
+| `opencode` | `AGENTS.md`, `opencode.json` |
+| `openclaw` | `.openclaw-system.md` |
+| `hermes` | `AGENTS.md` |
+| `pi` | `AGENTS.md`, `.pi/skills` symlink |
+| `standalone-python` | `run.py` |
+
+<Info>
+  The `.agent/` folder is the same across all harnesses. Only the glue file changes. You can install multiple adapters into the same project without duplicating the brain.
+</Info>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="How it works" icon="brain" href="/how-it-works">
+    Understand memory layers, skill loading, and the feedback loop.
+  </Card>
+  <Card title="Memory system" icon="database" href="/memory/overview">
+    Learn how the four memory layers store and retrieve knowledge.
+  </Card>
+  <Card title="Skills" icon="bolt" href="/skills/overview">
+    See the five seed skills and learn how to create your own.
+  </Card>
+  <Card title="Harness guides" icon="plug" href="/harnesses/claude-code">
+    Detailed setup instructions for each supported harness.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

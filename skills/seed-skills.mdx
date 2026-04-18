@@ -1,0 +1,184 @@
+---
+title: 'Seed skills: five built-in behaviors for every project'
+description: 'agentic-stack ships with five seed skills covering skill creation, memory, git, debugging, and deployment — the recurring tasks every agent encounters.'
+keywords: ['seed skills', 'skillforge', 'memory-manager', 'git-proxy', 'debug-investigator', 'deploy-checklist', 'agentic-stack']
+---
+
+agentic-stack ships with five seed skills: skillforge, memory-manager, git-proxy, debug-investigator, and deploy-checklist. These five were chosen because they cover the recurring tasks every agent encounters regardless of the project domain — creating new behavior, consolidating memory, operating git safely, investigating failures, and gating deployments. Together they demonstrate the full range of skill capabilities: meta-skills that improve the system itself, operation skills with hard safety constraints, and engineering skills with structured investigation loops.
+
+## The five seed skills
+
+<AccordionGroup>
+  <Accordion title="skillforge — creates new skills from recurring patterns">
+    **Category:** meta | **Version:** 2026-01-01
+
+    Skillforge is the skill that creates skills. When you find yourself doing the same thing manually across sessions, skillforge formalizes it into a new `SKILL.md` and registers it in the index and manifest.
+
+    **Triggers:** "create skill", "new skill", "build skill", "new capability"
+
+    **Tools:** `bash`, `memory_reflect`, `git`
+
+    **Constraints:**
+    - Do not duplicate existing skills
+    - Always include a self-rewrite hook in any skill created
+
+    **What it does:**
+
+    Before creating a new skill, skillforge checks `_index.md` for duplicates and `memory/semantic/LESSONS.md` for related patterns. If a similar skill already exists, it extends that skill instead of creating a new one. When a new skill is warranted, it drafts the `SKILL.md` with YAML frontmatter and plain-language instructions, registers it in both `_index.md` and `_manifest.jsonl`, and logs the decision in `memory/semantic/DECISIONS.md`.
+
+    **Self-rewrite trigger:** After every 5 skills created, or on any failed creation.
+  </Accordion>
+
+  <Accordion title="memory-manager — reads, scores, and consolidates memory">
+    **Category:** meta | **Version:** 2026-01-01
+
+    Memory-manager runs reflection cycles: it surfaces the most salient episodic entries, detects recurring patterns, and promotes them to semantic memory as candidate lessons for the host agent to review.
+
+    **Triggers:** "reflect", "remember", "distill", "what did I learn", "update memory", "compress memory"
+
+    **Tools:** `memory_reflect`, `bash`, `git`
+
+    **Preconditions:** `memory/episodic/AGENT_LEARNINGS.jsonl` must exist
+
+    **Constraints:**
+    - Do not delete high-salience entries
+    - Do not merge `personal/` memory into `semantic/` — user preferences are not general knowledge
+
+    **Consolidation steps:**
+
+    1. Load the top-5 episodic entries by salience score.
+    2. Detect recurring patterns across the last 100 entries.
+    3. For patterns appearing 3 or more times, promote to `memory/semantic/LESSONS.md`.
+    4. Flag any skill with 3 or more failures in 14 days for rewrite.
+    5. Archive resolved working context to `memory/episodic/snapshots/`.
+    6. Commit via git so `git log memory/` preserves the agent's full history.
+
+    **Keyword search:** When top-salience retrieval isn't enough, memory-manager uses the FTS5 search tool to find specific memories by topic:
+
+    ```bash
+    python3 .agent/memory/memory_search.py <query>
+    ```
+
+    **Self-rewrite trigger:** Every 10 reflections, or when the same class of mistake appears 3 or more times recently.
+  </Accordion>
+
+  <Accordion title="git-proxy — all git operations with a safety net">
+    **Category:** operations | **Version:** 2026-01-01
+
+    Git-proxy handles all git operations consistently. The hard constraints are enforced by the pre-tool-call hook — not by convention — so they cannot be bypassed even if the model tries.
+
+    **Triggers:** "commit", "push", "branch", "merge", "rebase", "pull request", "PR"
+
+    **Tools:** `bash`
+
+    **Preconditions:** `.git` must exist
+
+    **Constraints:**
+    - Never force push to `main`
+    - Never force push to protected branches
+    - Run tests before push
+
+    **Behavior within the fences:**
+
+    - **Commit:** Stage specific files, not `git add -A`. Write messages that explain the *why*, not the *what*. Reference the task or issue if one exists.
+    - **Push:** Run tests first. Prefer `--force-with-lease` over `--force` on feature branches.
+    - **Branch / merge / rebase:** Rebase feature branches on `main` before opening a PR. Resolve conflicts manually — never use `-X theirs` or `-X ours` without thinking. Merge via PR with review, not directly on the command line.
+
+    Git-proxy is the only seed skill that ships with a `KNOWLEDGE.md` file, which accumulates heuristics discovered from past failures.
+
+    **Self-rewrite trigger:** After every 5 uses, re-read `KNOWLEDGE.md` and the last 10 git-proxy episodic entries.
+  </Accordion>
+
+  <Accordion title="debug-investigator — systematic, not vibes-based">
+    **Category:** engineering | **Version:** 2026-01-01
+
+    Debug-investigator enforces a structured debugging loop: reproduce first, then isolate, form one explicit hypothesis, test it with a single change, and verify the fix with the original repro. Jumping straight to "fix" without reproducing is how false fixes ship.
+
+    **Triggers:** "debug", "why is this failing", "investigate", "stack trace", "bug"
+
+    **Tools:** `bash`, `memory_reflect`
+
+    **Constraints:**
+    - Reproduce before fixing
+    - Fix root cause, not symptoms
+
+    **The loop:**
+
+    1. **Reproduce.** Get a deterministic failure. If you can't reproduce it, you can't fix it.
+    2. **Isolate.** Bisect the problem space: narrow inputs, narrow code paths, narrow time windows.
+    3. **Hypothesize.** Form one explicit hypothesis. Write it in `memory/working/WORKSPACE.md` under "Active hypotheses".
+    4. **Test the hypothesis.** Make a single change that proves or disproves it — no shotgun fixes.
+    5. **Verify.** After the fix, re-run the repro. If the bug is gone, the repro becomes a regression test.
+
+    **Anti-patterns this skill explicitly rejects:**
+    - "It works now, not sure why" — keep investigating.
+    - Adding `try/except` to silence an error without understanding it.
+    - Changing five things at once and claiming one of them fixed it.
+
+    **Self-rewrite trigger:** If the same class of bug (timezone bugs, race conditions, off-by-one) appears 3 or more times, promote a lesson to `LESSONS.md` and add a domain-specific sub-procedure to this skill.
+  </Accordion>
+
+  <Accordion title="deploy-checklist — the fence between staging and prod">
+    **Category:** operations | **Version:** 2026-01-01
+
+    Deploy-checklist runs a structured verification sequence before any deploy. The production deploy step is gated by a human approval requirement enforced in `protocols/permissions.md` — the agent must ask, not assume.
+
+    **Triggers:** "deploy", "ship", "release", "go live"
+
+    **Tools:** `bash`
+
+    **Constraints:**
+    - All tests passing
+    - No unresolved TODOs in diff
+    - Requires human approval for production
+
+    **Pre-deploy checks:**
+    - All tests passing locally and in CI
+    - No unresolved TODOs or FIXMEs in the diff
+    - Migrations are reversible, or an explicit rollback plan is documented
+    - Env vars for new features are set in the target environment
+    - Feature flags default to off for anything user-visible
+    - Changelog or release notes updated
+
+    **Staging:** Deploy, watch logs for 5 minutes, click through the new flow in a real browser. If anything looks off, roll back and investigate — do not push through.
+
+    **Production:** This step requires human approval. Deploy during a low-traffic window. Watch error rate and latency dashboards for 15 minutes post-deploy. Have the rollback command pre-typed.
+
+    **Post-deploy:** Log the deploy (version, time, who approved) to episodic memory with `importance: 8`. If anything went wrong, run debug-investigator and update this checklist with the step that would have caught it.
+
+    **Self-rewrite trigger:** After any rollback — the checklist is missing a step, and that step needs to be added.
+  </Accordion>
+</AccordionGroup>
+
+## How the feedback loop works
+
+The seed skills don't just load and execute — they participate in a compounding improvement cycle that makes the agent more effective over time:
+
+<Steps>
+  <Step title="Skills log every action to episodic memory">
+    After each significant action, the skill calls `tools/memory_reflect.py` to write a structured entry to `memory/episodic/AGENT_LEARNINGS.jsonl`. This is the raw experience record.
+  </Step>
+  <Step title="auto_dream.py clusters recurring patterns">
+    The nightly staging cycle runs `memory/auto_dream.py`, which clusters episodic entries using single-linkage Jaccard similarity. Patterns appearing 3 or more times across entries are promoted to candidate lessons. No reasoning happens here — only mechanical filing.
+  </Step>
+  <Step title="Host agent reviews candidates">
+    The host agent checks `memory/working/REVIEW_QUEUE.md` at session start. When candidates are pending, it reviews them using the CLI tools: `list_candidates.py`, `graduate.py`, and `reject.py`. Graduation requires an explicit rationale — rubber-stamping is structurally impossible.
+  </Step>
+  <Step title="Graduated lessons append to lessons.jsonl">
+    Accepted candidates land in `memory/semantic/lessons.jsonl` (the source of truth) and are rendered to `memory/semantic/LESSONS.md`. Future sessions load query-relevant accepted lessons automatically. Rejected candidates retain their full decision history so recurring churn becomes visible.
+  </Step>
+  <Step title="on_failure flags skills for rewrite">
+    `on_failure` monitors episodic memory for skills that fail 3 or more times within 14 days. When the threshold is crossed, the skill is flagged for rewrite — queued for the next session's review alongside the evidence from episodic memory. The self-rewrite hook in each `SKILL.md` provides the specific instructions for how that skill should revise itself.
+  </Step>
+</Steps>
+
+Over time, `git log .agent/memory/` becomes the agent's autobiography — a full, auditable record of every lesson learned, every decision made, and every skill updated.
+
+<CardGroup cols={2}>
+  <Card title="Writing skills" icon="pencil" href="/skills/writing-skills">
+    Author your own skills: frontmatter schema, writing style, self-rewrite hooks, and the 3-step registration process.
+  </Card>
+  <Card title="Memory overview" icon="brain" href="/memory/overview">
+    How the four memory layers work and how the nightly staging cycle feeds into host-agent review.
+  </Card>
+</CardGroup>

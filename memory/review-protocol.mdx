@@ -1,0 +1,203 @@
+---
+title: "Reviewing and graduating lessons into semantic memory"
+description: "How the host agent reviews staged candidates, accepts or rejects them with CLI tools, and graduates lessons into permanent semantic memory."
+---
+
+The staging pipeline is mechanical — `auto_dream.py` clusters, filters, and queues candidates without making any judgment. The reasoning step belongs exclusively to the host agent: you. This split is deliberate. Unattended reasoning produces confident-sounding lessons that may be too narrow, contradictory, or simply wrong. The review tools enforce that every accepted lesson carries a human rationale, making rubber-stamping structurally impossible.
+
+## When to review
+
+Check `memory/working/REVIEW_QUEUE.md` at the start of every session. If either of the following is true, complete a review batch before starting substantive work:
+
+- **Pending candidates > 10**
+- **Oldest staged candidate > 7 days old**
+
+`REVIEW_QUEUE.md` is regenerated at the end of every dream cycle and loaded into context automatically by the build context step. You will not miss it.
+
+<Tip>
+Review candidates in a batch, not one by one. Cross-candidate contradictions only surface when you can see multiple claims at once. A lesson that looks sound in isolation may directly contradict another candidate in the same batch.
+</Tip>
+
+## Review workflow
+
+<Steps>
+  <Step title="List pending candidates">
+    ```bash
+    python .agent/tools/list_candidates.py
+    ```
+
+    The output is sorted by priority (`cluster_size × canonical_salience × age_factor`). Higher-priority items appear first. Each entry shows the candidate ID, claim text, cluster size, salience score, conditions, evidence episode count, rejection history, and the timestamp of the last decision.
+
+    ```
+    === 5 candidate(s) — status=staged ===
+
+    # a3f9c1b2d456  (priority=18.40)
+      claim:      Always set PGPASSWORD in the environment before running pg_dump in CI
+      cluster:    4 episode(s)
+      salience:   9.20
+      conditions: ['ci', 'database', 'pgdump']
+      evidence:   4 episode(s)
+      rejections: 0
+      staged:     2026-04-11T03:00:14
+    ```
+  </Step>
+  <Step title="Evaluate each candidate">
+    For each staged candidate, assess:
+
+    - **Claim** — is it specific enough to be actionable? Too broad to be useful?
+    - **Evidence IDs** — do the supporting episodes actually justify this claim?
+    - **Cluster size** — a size of 2 means the pattern appeared twice; size of 8 means eight distinct episodes share this pattern.
+    - **Conditions** — the shared vocabulary of the cluster; helps verify the claim applies to the right context.
+    - **Rejection count** — if this candidate has been rejected before, the full decision log in the candidate JSON explains why. A recurring pattern is not the same as a fresh one.
+    - **Contradictions** — does this claim conflict with anything already in `semantic/LESSONS.md` or with another candidate in the current batch?
+  </Step>
+  <Step title="Graduate an accepted candidate">
+    ```bash
+    python .agent/tools/graduate.py <id> --rationale "..."
+    ```
+
+    The `--rationale` flag is required. A missing rationale is a hard error.
+
+    ```bash
+    # Accept with full rationale
+    python .agent/tools/graduate.py a3f9c1b2d456 \
+      --rationale "Four independent CI failures all traced to missing PGPASSWORD; consistent with PREFERENCES (test-after strategy means CI must be reliable)"
+
+    # Accept as provisional (probationary — appears as [PROVISIONAL] in LESSONS.md)
+    python .agent/tools/graduate.py a3f9c1b2d456 \
+      --provisional \
+      --rationale "Pattern is plausible but only 2 evidence episodes; watch for recurrence"
+
+    # Accept and supersede an older lesson
+    python .agent/tools/graduate.py a3f9c1b2d456 \
+      --supersedes lesson_b7e2a0c1f3d9 \
+      --rationale "Updated claim is more precise; original was too broad"
+    ```
+
+    Graduating a candidate:
+    1. Runs a final heuristic check (length + exact-duplicate) against the current `LESSONS.md`.
+    2. Appends the lesson to `semantic/lessons.jsonl`.
+    3. Re-renders `semantic/LESSONS.md` from the updated `lessons.jsonl`.
+    4. Moves the candidate JSON to `candidates/graduated/`.
+    5. Updates `REVIEW_QUEUE.md`.
+  </Step>
+  <Step title="Reject a candidate">
+    ```bash
+    python .agent/tools/reject.py <id> --reason "..."
+    ```
+
+    The `--reason` flag is required.
+
+    ```bash
+    python .agent/tools/reject.py a3f9c1b2d456 \
+      --reason "Too specific to the staging environment; not a generalizable lesson"
+    ```
+
+    Rejection moves the candidate to `candidates/rejected/` but **does not delete it**. The full decision history — including the rejection reason, timestamp, evidence snapshot, and `LESSONS.md` hash at the time of rejection — is preserved. If the same pattern recurs with new evidence in a future dream cycle, the candidate is re-staged with its `rejection_count` visible, so the reviewer sees churn rather than a supposedly fresh item.
+  </Step>
+  <Step title="Requeue a previously rejected candidate">
+    ```bash
+    python .agent/tools/reopen.py <id>
+    ```
+
+    Use `reopen.py` when a prior rejection was wrong or new context changes the picture. The candidate moves back to the staged pool with all history intact. The `rejection_count` is not reset.
+
+    ```bash
+    python .agent/tools/reopen.py a3f9c1b2d456
+    # reopened a3f9c1b2d456 (rejection_count=1)
+    ```
+  </Step>
+</Steps>
+
+## CLI tool reference
+
+<AccordionGroup>
+  <Accordion title="list_candidates.py — view the review queue">
+    ```bash
+    # Default: staged candidates, sorted by priority
+    python .agent/tools/list_candidates.py
+
+    # Human-readable, limited to top 5
+    python .agent/tools/list_candidates.py --limit 5
+
+    # JSON output for scripting
+    python .agent/tools/list_candidates.py --format json
+
+    # View rejected or graduated candidates
+    python .agent/tools/list_candidates.py --status rejected
+    python .agent/tools/list_candidates.py --status graduated
+
+    # Sort by age instead of priority
+    python .agent/tools/list_candidates.py --sort age
+    ```
+
+    Priority is calculated as `cluster_size × canonical_salience × age_factor`, where `age_factor` grows from 1.0 at staging time to 2.0 after 14 days. Older, more-recurrent, higher-salience candidates appear first.
+  </Accordion>
+
+  <Accordion title="graduate.py — accept a candidate">
+    ```bash
+    python .agent/tools/graduate.py <candidate_id> --rationale "..."
+
+    # Optional flags
+    --provisional         # Accept as probationary; appears as [PROVISIONAL] in LESSONS.md
+    --supersedes <id>     # Mark an existing lesson as superseded
+    --reviewer <name>     # Override the reviewer label (default: host-agent)
+    ```
+
+    `--rationale` is required and must be a non-empty string. The intent is that the reviewer articulates _why_ this lesson holds, not just that they agree. A lesson record without reasoning cannot be audited later.
+  </Accordion>
+
+  <Accordion title="reject.py — reject a candidate">
+    ```bash
+    python .agent/tools/reject.py <candidate_id> --reason "..."
+
+    # Optional flags
+    --reviewer <name>     # Override the reviewer label (default: host-agent)
+    ```
+
+    `--reason` is required. The reason is stored in the decision log and visible in future sessions when the same pattern is re-staged.
+  </Accordion>
+
+  <Accordion title="reopen.py — requeue a rejected candidate">
+    ```bash
+    python .agent/tools/reopen.py <candidate_id>
+
+    # Optional flags
+    --reviewer <name>     # Override the reviewer label (default: host-agent)
+    ```
+
+    Moves the candidate from `candidates/rejected/` back to `candidates/` (staged pool). History is preserved; `rejection_count` is not reset.
+  </Accordion>
+</AccordionGroup>
+
+## What graduating a lesson does
+
+When `graduate.py` runs successfully, the following happens in order:
+
+1. The candidate is loaded from `candidates/<id>.json`.
+2. A final `heuristic_check` runs against the live `LESSONS.md` to catch last-minute conflicts.
+3. A new lesson record is appended to `semantic/lessons.jsonl` (the source of truth). The record includes the claim, conditions, evidence IDs, rationale, reviewer, cluster size, canonical salience, and a confidence score derived from claim length and cluster size.
+4. `render_lessons.py` regenerates `semantic/LESSONS.md` from the full `lessons.jsonl`. Hand-curated content above the sentinel line is preserved.
+5. The candidate JSON is moved to `candidates/graduated/<id>.json`.
+6. `REVIEW_QUEUE.md` is updated.
+
+<Warning>
+Never hand-edit `semantic/LESSONS.md`. It is a rendered view of `lessons.jsonl`. Any manual edits will be overwritten the next time a candidate is graduated or rejected. To add permanent content above the auto-managed section, write it above the sentinel line:
+
+```
+## Auto-promoted entries will be appended below
+```
+</Warning>
+
+## Why rationale is required
+
+The review protocol exists because automated pattern extraction is good at finding recurring text, but has no way to distinguish "this keeps happening because the process is broken" from "this keeps happening because it's the right approach." The host agent provides that judgment.
+
+Requiring a written rationale serves two purposes:
+
+- **It prevents rubber-stamping.** A reviewer who cannot articulate why a lesson holds probably has not actually evaluated it. The `--rationale` flag is a hard CLI error if empty.
+- **It creates an auditable trail.** Six months later, when a lesson seems wrong, the rationale in `lessons.jsonl` explains the reasoning at the time of acceptance. That context is often more useful than the lesson text itself.
+
+<Note>
+The heuristic prefilter in `validate.py` has already removed obvious junk (claims too short to be meaningful, exact duplicates of existing lessons). Everything that reaches the review queue has passed that bar and needs real judgment — it cannot be safely auto-accepted.
+</Note>

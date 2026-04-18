@@ -1,0 +1,130 @@
+---
+title: "OpenCode harness guide for the agentic-stack brain"
+description: "Install the agentic-stack brain into OpenCode with AGENTS.md and opencode.json, adding permission rules that block force pushes and prompt before any push."
+---
+
+The OpenCode adapter installs two files at your project root: `AGENTS.md`, which OpenCode reads natively as workspace-level context, and `opencode.json`, which declares instruction file paths and permission rules. Hook support is partial — OpenCode enforces permission rules at the tool-call level, but does not expose a generic post-tool event for automatic memory logging. Reflect calls are instruction-driven.
+
+## What gets installed
+
+| File | Purpose |
+|---|---|
+| `AGENTS.md` | Workspace-level context file read natively by OpenCode; points at `.agent/` |
+| `opencode.json` | Instruction list and permission rules (deny force push, ask before any push) |
+
+## Supported harnesses reference
+
+| Harness | Config file | Hook support |
+|---|---|---|
+| **Claude Code** | `CLAUDE.md` + `.claude/settings.json` | yes (PostToolUse, Stop) |
+| **Cursor** | `.cursor/rules/*.mdc` | no (manual reflect calls) |
+| **Windsurf** | `.windsurfrules` | no (manual reflect calls) |
+| **OpenCode** | `AGENTS.md` + `opencode.json` | partial (permission rules) |
+| **OpenClaw** | system-prompt include | varies by fork |
+| **Hermes Agent** | `AGENTS.md` (agentskills.io compatible) | partial (own memory) |
+| **Pi Coding Agent** | `AGENTS.md` + `.pi/skills/` | no (extension system) |
+| **Standalone Python** | `run.py` (any LLM) | yes (full control) |
+
+## Install steps
+
+<Steps>
+  <Step title="Run the installer">
+    From your project root, run the adapter installer. The onboarding wizard launches automatically and populates `.agent/memory/personal/PREFERENCES.md`.
+
+    <CodeGroup>
+
+    ```bash macOS / Linux
+    ./install.sh opencode
+    ```
+
+    ```powershell Windows
+    .\install.ps1 opencode C:\path\to\your-project
+    ```
+
+    </CodeGroup>
+  </Step>
+  <Step title="Verify the wiring">
+    Run OpenCode in the project directory and ask:
+
+    ```
+    What's in my preferences file?
+    ```
+
+    OpenCode should read `.agent/memory/personal/PREFERENCES.md`. If it does, both `AGENTS.md` and `opencode.json` are being read.
+  </Step>
+</Steps>
+
+## How OpenCode reads the config
+
+OpenCode natively reads `AGENTS.md` from the project root as workspace context. The `opencode.json` `instructions` array tells OpenCode which additional files to load into context — in this case, both the root `AGENTS.md` and `.agent/AGENTS.md` (the portable brain's own map):
+
+```json opencode.json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md", ".agent/AGENTS.md"],
+  "permissions": {
+    "bash": {
+      "git push --force*": "deny",
+      "git push *": "ask",
+      "rm -rf /*": "deny"
+    },
+    "edit": "allow"
+  }
+}
+```
+
+The permission rules use glob-style matching. `"deny"` blocks the command before it executes; `"ask"` prompts for confirmation.
+
+## Memory logging
+
+OpenCode does not fire a generic post-tool event. The `AGENTS.md` file instructs the model to call `memory_reflect.py` after significant actions, but this is instruction-driven, not enforced. Call it manually from the terminal whenever you want to record an observation:
+
+```bash
+python3 .agent/tools/memory_reflect.py opencode manual ok
+```
+
+To run the dream cycle and stage candidate lessons from accumulated episodic entries:
+
+```bash
+python3 .agent/memory/auto_dream.py
+```
+
+## Customizing opencode.json
+
+**Add instructions files** — append additional paths to the `instructions` array:
+
+```json
+"instructions": ["AGENTS.md", ".agent/AGENTS.md", ".agent/protocols/permissions.md"]
+```
+
+**Add or change permission rules** — the `bash` object accepts any glob pattern as a key. Valid values are `"deny"`, `"ask"`, and `"allow"`:
+
+```json
+"permissions": {
+  "bash": {
+    "git push --force*": "deny",
+    "git push *": "ask",
+    "rm -rf /*": "deny",
+    "git reset --hard*": "ask"
+  },
+  "edit": "allow"
+}
+```
+
+<Tip>
+Test deny patterns with `opencode --dry-run` before committing them to `opencode.json`. Glob syntax varies slightly between tools; a pattern that seems correct may match more broadly than intended.
+</Tip>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="opencode.json is rejected on startup">
+    Check that the `$schema` URL at the top of `opencode.json` matches your installed OpenCode version. Newer OpenCode releases may update the config schema; if the schema URL resolves to a different version than the one you have installed, validation may fail. Update `opencode.json` to match, or remove the `$schema` line to skip validation.
+  </Accordion>
+  <Accordion title="Permission rules don't block the expected commands">
+    The permission syntax uses glob-style matching, not regex. Test your patterns with `opencode --dry-run`. A missing wildcard or incorrect prefix is the most common cause of rules that appear correct but don't match. Also confirm there are no conflicting `allow` rules higher in the config.
+  </Accordion>
+  <Accordion title="Agent ignores AGENTS.md">
+    Confirm the file is at the project root and that you're running OpenCode from that directory. Also check `opencode.json` is present — the `instructions` array is what tells OpenCode to load the file as context, in addition to its native `AGENTS.md` support.
+  </Accordion>
+</AccordionGroup>

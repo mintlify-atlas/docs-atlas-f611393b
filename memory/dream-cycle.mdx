@@ -1,0 +1,130 @@
+---
+title: "Nightly dream cycle: clustering and candidate staging"
+description: "How auto_dream.py clusters episodic memory into candidate lessons each night — purely mechanical, no reasoning, safe to run unattended."
+---
+
+The dream cycle is the mechanical half of the memory pipeline. Every night, `auto_dream.py` reads the episodic log, clusters recurring patterns using content similarity, and stages candidate lessons for human review. It does not accept anything, modify semantic memory, or make any judgment calls — those are exclusively the host agent's job. The separation is intentional: unattended reasoning is the failure mode this system is built to prevent.
+
+## What auto_dream.py does
+
+The cycle runs in six ordered steps, each handled by a dedicated module:
+
+<Steps>
+  <Step title="Load episodic entries">
+    All entries from `memory/episodic/AGENT_LEARNINGS.jsonl` are read into memory. If the file is empty or missing, the cycle still refreshes `REVIEW_QUEUE.md` in case candidates from a prior cycle are waiting.
+  </Step>
+  <Step title="Cluster by content similarity">
+    `cluster.py` groups entries using single-linkage agglomerative clustering on Jaccard similarity of word sets (action + reflection + detail fields). The default threshold is 0.3. An entry joins every cluster it is similar to, and all matching clusters merge — proper single-linkage, so cluster membership is not order-dependent.
+    
+    Only clusters with at least 2 members survive; singletons are dropped to prevent one-off events from generating candidate churn.
+  </Step>
+  <Step title="Extract one pattern per cluster">
+    `cluster.py` selects the highest-salience episode in each cluster as the canonical representative. The pattern's claim is that episode's `reflection` or `action` field — no synthesis, no LLM required. Conditions are the tokens shared by every cluster member (intersection of word sets). Salience is boosted by cluster size so a recurring-but-moderate pattern can clear the promotion threshold even when no single episode was extreme.
+  </Step>
+  <Step title="Stage candidates (threshold: salience ≥ 7.0)">
+    `promote.py` writes each qualifying pattern to `memory/candidates/` as a JSON file with full lifecycle metadata: `status`, `decisions`, `rejection_count`, `staged_at`, `evidence_ids`. Patterns that have already been graduated are skipped. Patterns that were previously rejected are only re-staged if new supporting evidence has appeared since the last rejection decision.
+  </Step>
+  <Step title="Heuristic prefilter">
+    `validate.py` scans the newly staged candidates and moves obvious junk to `candidates/rejected/` automatically. Two checks run: a minimum claim length of 20 characters, and exact-duplicate detection against the current `LESSONS.md`. Everything that passes goes on to the host agent for real review — subjective judgment is not performed here.
+  </Step>
+  <Step title="Decay old episodes and archive stale workspace">
+    `decay.py` moves entries older than 90 days with salience below 2.0 to `episodic/snapshots/`. `archive.py` moves `working/WORKSPACE.md` to `episodic/snapshots/` if it has not been updated in 2 days. Finally, `REVIEW_QUEUE.md` is regenerated so the host agent sees an accurate backlog count at the next session start.
+  </Step>
+</Steps>
+
+## Pattern IDs
+
+Pattern IDs are derived deterministically from the canonical claim text and the cluster's shared conditions (the intersection of word sets across all members):
+
+```python
+conditions_key = "|".join(sorted(common))
+pattern_id = hashlib.md5(
+    (_normalize_claim(claim) + "||" + conditions_key).encode()
+).hexdigest()[:12]
+```
+
+Because conditions tend to stay stable as cluster membership shifts (the intersection of a growing cluster shrinks slowly), the same real-world pattern carries the same ID across dream cycles even when individual episodes decay in or out of the cluster. This means lifecycle state — rejection count, decision log, rationale — carries forward automatically. A recurring pattern does not look fresh to the reviewer just because its cluster membership changed overnight.
+
+## Heuristic prefilter details
+
+`validate.py` applies two deterministic checks with no LLM involvement:
+
+<AccordionGroup>
+  <Accordion title="Minimum claim length">
+    Claims shorter than 20 characters are rejected as `claim_too_short`. The reasoning: a claim that short cannot carry actionable information and is almost certainly a side-effect of clustering noise (e.g., the canonical episode's reflection field being empty or nearly empty).
+  </Accordion>
+  <Accordion title="Exact duplicate detection">
+    The candidate claim is normalized (lowercase, punctuation stripped, whitespace collapsed) and compared against accepted lessons in `LESSONS.md`. Only terminal lessons — those with `status=accepted` in their HTML annotation — count for this check. Provisional and legacy lessons do not block re-review, so probationary content can still be challenged.
+    
+    When a duplicate rejection is recorded, `duplicate_claims` is stamped into the decision entry. On the next dream cycle, `promote.py` checks whether those specific lessons are still present rather than comparing a whole-file hash — unrelated graduations do not trigger spurious churn.
+  </Accordion>
+</AccordionGroup>
+
+## Setting up the nightly cron job
+
+<Steps>
+  <Step title="Open your crontab">
+    ```bash
+    crontab -e
+    ```
+  </Step>
+  <Step title="Add the dream cycle line">
+    Replace `/path/to/project` with the absolute path to your project root:
+
+    ```bash
+    0 3 * * * python3 /path/to/project/.agent/memory/auto_dream.py >> /path/to/project/.agent/memory/dream.log 2>&1
+    ```
+
+    The `2>&1` redirect captures both stdout and stderr to `dream.log` so failures are visible without a mail daemon.
+  </Step>
+  <Step title="Verify the cron entry">
+    ```bash
+    crontab -l
+    ```
+  </Step>
+</Steps>
+
+<Note>
+`auto_dream.py` resolves all its paths absolutely from `__file__`, so it runs correctly regardless of which working directory the cron daemon uses. You do not need to `cd` into the project before calling it.
+</Note>
+
+<Tip>
+No git commits, no network calls, no reasoning — the dream cycle is safe to run unattended. The worst it can do is stage a candidate that the host agent then rejects in 30 seconds.
+</Tip>
+
+## Running manually
+
+Run the cycle at any time without waiting for the cron schedule:
+
+```bash
+python3 .agent/memory/auto_dream.py
+```
+
+The output line summarises every stage of the run:
+
+```
+dream cycle: patterns=12 staged=3 prefiltered_out=1 pending_review=5 archived=4 kept=88
+```
+
+| Field | Meaning |
+|-------|---------|
+| `patterns` | Total clusters extracted from the episodic log |
+| `staged` | New candidates written to `memory/candidates/` |
+| `prefiltered_out` | Candidates auto-rejected by `validate.py` |
+| `pending_review` | Total candidates currently awaiting host-agent review |
+| `archived` | Episodic entries moved to `snapshots/` by decay |
+| `kept` | Episodic entries that remain in the active log |
+
+## What the cycle never does
+
+<Warning>
+`auto_dream.py` is intentionally restricted. It will never:
+
+- Write to `semantic/lessons.jsonl` or `semantic/LESSONS.md`
+- Mark any candidate as `accepted`
+- Make a git commit
+- Make any network request
+- Perform any reasoning or judgment about whether a pattern is actually useful
+
+All of those actions belong to the host agent via the CLI review tools.
+</Warning>

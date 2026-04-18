@@ -1,0 +1,108 @@
+---
+title: "Hermes Agent harness guide for agentic-stack brain"
+description: "Install the agentic-stack brain into Hermes Agent via AGENTS.md, with agentskills.io-compatible skills and optional mirroring into Hermes's memory files."
+---
+
+The Hermes adapter layers the portable `.agent/` brain on top of Hermes Agent (Nous Research) by writing a single `AGENTS.md` at your project root. Hermes reads this file natively as workspace-level context, giving the agent the full agentic-stack protocol stack — memory, skills, and permissions — while leaving Hermes's own persistence layer intact. Skills under `.agent/skills/` use the same frontmatter-plus-body shape that the agentskills.io standard requires, so they are immediately browsable from the Hermes CLI.
+
+## What gets installed
+
+| File | Purpose |
+|---|---|
+| `AGENTS.md` | Workspace-level context file read natively by Hermes; points at `.agent/` |
+
+## Supported harnesses reference
+
+| Harness | Config file | Hook support |
+|---|---|---|
+| **Claude Code** | `CLAUDE.md` + `.claude/settings.json` | yes (PostToolUse, Stop) |
+| **Cursor** | `.cursor/rules/*.mdc` | no (manual reflect calls) |
+| **Windsurf** | `.windsurfrules` | no (manual reflect calls) |
+| **OpenCode** | `AGENTS.md` + `opencode.json` | partial (permission rules) |
+| **OpenClaw** | system-prompt include | varies by fork |
+| **Hermes Agent** | `AGENTS.md` (agentskills.io compatible) | partial (own memory) |
+| **Pi Coding Agent** | `AGENTS.md` + `.pi/skills/` | no (extension system) |
+| **Standalone Python** | `run.py` (any LLM) | yes (full control) |
+
+## Install steps
+
+<Steps>
+  <Step title="Run the installer">
+    From your project root, run the adapter installer. The onboarding wizard launches automatically and populates `.agent/memory/personal/PREFERENCES.md`.
+
+    <CodeGroup>
+
+    ```bash macOS / Linux
+    ./install.sh hermes
+    ```
+
+    ```powershell Windows
+    .\install.ps1 hermes C:\path\to\your-project
+    ```
+
+    </CodeGroup>
+  </Step>
+  <Step title="Verify the wiring">
+    In the Hermes CLI, ask:
+
+    ```
+    What's in my LESSONS file?
+    ```
+
+    Hermes should read `.agent/memory/semantic/LESSONS.md`. If it does, `AGENTS.md` is being picked up as workspace context.
+  </Step>
+</Steps>
+
+## How Hermes reads AGENTS.md
+
+Hermes reads `AGENTS.md` as workspace-level project context on session start. The installed file points it at the portable brain in `.agent/`, directing the startup read order: map first, then preferences, then lessons, then permissions.
+
+Skills under `.agent/skills/` follow the frontmatter-plus-body shape that Hermes expects from the agentskills.io standard. You can browse them from within Hermes using `/skills` in the CLI — no separate registration is needed.
+
+## Memory logging
+
+Hermes has its own persistence layer (`MEMORY.md`, `USER.md`, `SOUL.md`). The two systems are complementary: treat `.agent/memory/` as the source of truth and mirror selectively into Hermes's native files when you want specific state visible inside Hermes's runtime persistence.
+
+Call `memory_reflect.py` from the terminal or instruct the model to call it after significant actions:
+
+```bash
+python3 .agent/tools/memory_reflect.py hermes manual ok
+```
+
+**Optional: mirror PREFERENCES into Hermes's USER.md**
+
+If you want your conventions and preferences visible inside Hermes's built-in persistence layer, create a symlink:
+
+```bash
+ln -s .agent/memory/personal/PREFERENCES.md USER.md
+```
+
+This keeps a single source of truth in `.agent/` while making the data available to Hermes's own memory reads.
+
+Run the dream cycle manually or on a cron schedule to stage candidate lessons from episodic entries:
+
+```bash
+python3 .agent/memory/auto_dream.py
+```
+
+## Customizing
+
+The `AGENTS.md` file at your project root is what Hermes reads. Edit it to change the startup read order or to add project-specific constraints. The skills in `.agent/skills/` can be edited or extended without touching `AGENTS.md` — Hermes will pick up changes the next time a skill's trigger is matched.
+
+<Note>
+Hermes supports multiple LLM providers via its gateway. The portable `.agent/` brain is model-agnostic — it does not store provider-specific state and works with whichever model Hermes is configured to use.
+</Note>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="AGENTS.md isn't picked up as workspace context">
+    Run `hermes setup` — the wizard can re-register workspace-level context files. If the file was present before you ran setup, confirm you are launching Hermes from the directory that contains `AGENTS.md`. Hermes looks for it relative to the current working directory.
+  </Accordion>
+  <Accordion title="Skills don't appear in /skills">
+    Skills must follow the agentskills.io frontmatter-plus-body format. Open `.agent/skills/_index.md` for the skill manifest and check that each skill's `SKILL.md` has valid frontmatter. A malformed frontmatter block will cause Hermes to skip the skill.
+  </Accordion>
+  <Accordion title="Hermes's own memory files conflict with .agent/ files">
+    The two systems are designed to coexist. `.agent/memory/` is the source of truth for lessons and episodic history. Hermes's `MEMORY.md` / `USER.md` / `SOUL.md` are separate runtime files. If content diverges, prefer `.agent/memory/` and mirror from it, not the other way around.
+  </Accordion>
+</AccordionGroup>

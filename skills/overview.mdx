@@ -1,0 +1,121 @@
+---
+title: 'Skills: how progressive disclosure works in agentic-stack'
+description: 'Skills are the unit of learned behavior in agentic-stack. A lightweight manifest always loads; full SKILL.md files load only when triggers match.'
+keywords: ['skills', 'progressive disclosure', 'skill registry', 'SKILL.md', 'manifest', 'triggers', 'agentic-stack']
+---
+
+Skills are named, versioned instruction sets that live inside `.agent/skills/`. Instead of dumping every behavioral guideline into context at once, agentic-stack uses progressive disclosure: a lightweight index and machine-readable manifest always load, while the full `SKILL.md` for any given skill only enters the context window when the user's message matches one of that skill's trigger phrases. This keeps the baseline context small and ensures the right behavior loads exactly when it's needed.
+
+## Two-tier loading
+
+Every session starts with two files already in context:
+
+- **`_index.md`** — a human-readable registry listing each skill's name, one-line description, and trigger phrases.
+- **`_manifest.jsonl`** — the machine-readable equivalent, one JSON object per line, consumed by `skill_loader.py`.
+
+When user input arrives, `skill_loader.py` scans every manifest entry and checks whether any trigger phrase appears in the message. For each match, it reads the full `SKILL.md` (plus `KNOWLEDGE.md` if it exists) and returns the content to the agent. Skills whose preconditions aren't satisfied are silently skipped.
+
+```python
+# tools/skill_loader.py — the progressive_load entry point
+def progressive_load(user_input):
+    manifest = load_manifest()
+    matches = match_triggers(user_input, manifest)
+    loaded = []
+    for skill in matches:
+        if not check_preconditions(skill):
+            continue
+        content = load_skill_full(skill["name"])
+        if content:
+            loaded.append({
+                "name": skill["name"],
+                "constraints": skill.get("constraints", []),
+                "content": content,
+            })
+    return loaded
+```
+
+You can also call `skill_loader.py` directly from a harness hook or a Python conductor to load a skill by name:
+
+```python
+from tools.skill_loader import load_skill_full
+
+content = load_skill_full("deploy-checklist")
+```
+
+## Skill directory structure
+
+Each skill lives in its own subdirectory under `.agent/skills/`:
+
+```
+skills/<name>/
+├── SKILL.md       # YAML frontmatter + plain-language instructions
+└── KNOWLEDGE.md   # (optional) accumulated local lessons from past runs
+```
+
+`SKILL.md` always starts with YAML frontmatter declaring the skill's name, version, triggers, tools, preconditions, and constraints. The body contains plain-language instructions — destinations and fences, not step-by-step driving directions. `KNOWLEDGE.md` is optional and appended to `SKILL.md` content at load time when it exists.
+
+## The skill registry
+
+The `_index.md` file is the canonical human-readable listing of all registered skills. Every session loads it first:
+
+```markdown
+# Skill Registry
+
+## skillforge
+Creates new skills from observed patterns and recurring tasks.
+Triggers: "create skill", "new skill", "I keep doing this manually"
+
+## memory-manager
+Reads, scores, and consolidates memory. Runs reflection cycles.
+Triggers: "reflect", "what did I learn", "compress memory"
+
+## git-proxy
+All git operations with safety constraints.
+Triggers: "commit", "push", "branch", "merge", "rebase"
+Constraints: never force push to main; run tests before push.
+
+## debug-investigator
+Systematic debugging: reproduce, isolate, hypothesize, verify.
+Triggers: "debug", "why is this failing", "investigate"
+
+## deploy-checklist
+Pre-deployment verification against a structured checklist.
+Triggers: "deploy", "ship", "release", "go live"
+Constraints: all tests passing, no unresolved TODOs in diff,
+requires human approval for production.
+```
+
+## Self-rewrite hooks
+
+Every skill ships with a self-rewrite hook — a short section at the bottom of `SKILL.md` that instructs the agent when and how to revise the skill itself. The hook fires on repeated failures or after a fixed number of uses. At the system level, `on_failure` flags any skill that fails 3 or more times within 14 days, queuing it for rewrite review. This means skills improve over time rather than accumulating silent workarounds.
+
+## The five seed skills
+
+agentic-stack ships with five seed skills that cover the most common recurring agent tasks:
+
+<CardGroup cols={2}>
+  <Card title="skillforge" icon="hammer" href="/skills/seed-skills#skillforge">
+    Creates new skills from observed patterns. Triggers when you say "create skill", "new skill", or "I keep doing this manually".
+  </Card>
+  <Card title="memory-manager" icon="brain" href="/skills/seed-skills#memory-manager">
+    Reads, scores, and consolidates episodic memory into candidate lessons. Triggers on "reflect", "compress memory", or "what did I learn".
+  </Card>
+  <Card title="git-proxy" icon="git-branch" href="/skills/seed-skills#git-proxy">
+    All git operations with enforced safety constraints. Triggers on "commit", "push", "branch", "merge", and "rebase".
+  </Card>
+  <Card title="debug-investigator" icon="bug" href="/skills/seed-skills#debug-investigator">
+    Systematic reproduce → isolate → hypothesize → verify loop. Triggers on "debug", "why is this failing", and "investigate".
+  </Card>
+  <Card title="deploy-checklist" icon="circle-check" href="/skills/seed-skills#deploy-checklist">
+    Pre-deployment verification with a human approval gate for production. Triggers on "deploy", "ship", "release", and "go live".
+  </Card>
+</CardGroup>
+
+<CardGroup cols={2}>
+  <Card title="Seed skills" icon="seedling" href="/skills/seed-skills">
+    Detailed breakdown of all five seed skills, their constraints, and the compounding feedback loop.
+  </Card>
+  <Card title="Writing skills" icon="pencil" href="/skills/writing-skills">
+    How to write, register, and maintain your own custom skills.
+  </Card>
+</CardGroup>

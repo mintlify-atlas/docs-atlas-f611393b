@@ -1,0 +1,91 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "agentic-stack",
+  "projectDescription": "A portable .agent/ folder (memory + skills + protocols) that plugs into Claude Code, Cursor, Windsurf, OpenCode, and other AI coding harnesses, keeping the agent's knowledge when you switch tools.",
+  "theme": "palm",
+  "primaryColor": "#7c7c7c",
+  "lightColor": "#0a0a0a",
+  "darkColor": "#c7c7c7",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "how-it-works"
+            ]
+          },
+          {
+            "group": "Harness Guides",
+            "pages": [
+              "harnesses/claude-code",
+              "harnesses/cursor",
+              "harnesses/windsurf",
+              "harnesses/opencode",
+              "harnesses/openclaw",
+              "harnesses/hermes",
+              "harnesses/pi",
+              "harnesses/standalone-python"
+            ]
+          },
+          {
+            "group": "Memory System",
+            "pages": [
+              "memory/overview",
+              "memory/dream-cycle",
+              "memory/review-protocol",
+              "memory/search"
+            ]
+          },
+          {
+            "group": "Skills",
+            "pages": [
+              "skills/overview",
+              "skills/writing-skills",
+              "skills/seed-skills"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/cli-commands",
+              "reference/protocols",
+              "reference/onboarding-wizard",
+              "reference/configuration"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Portable .agent/ folder with memory, skills, and protocols that works across 8 AI harnesses",
+    "Four-layer memory system: working, episodic, semantic, and personal",
+    "Nightly auto_dream.py staging cycle that clusters patterns into candidate lessons",
+    "Host-agent review protocol with graduate.py/reject.py requiring explicit rationale",
+    "Progressive skill disclosure — lightweight manifest always in context, full SKILL.md loads on trigger match",
+    "Five seed skills: skillforge, memory-manager, git-proxy, debug-investigator, deploy-checklist",
+    "Beta FTS5 full-text search over all memory documents",
+    "Cross-harness adapter shims for Claude Code, Cursor, Windsurf, OpenCode, OpenClaw, Hermes, Pi, and standalone Python"
+  ],
+  "publicApiSurface": [
+    "agentic-stack <harness> — install the portable brain into a project",
+    "agentic-stack <harness> --yes — non-interactive install with all defaults",
+    "agentic-stack <harness> --reconfigure — re-run onboarding wizard",
+    "python3 .agent/tools/list_candidates.py — list pending review candidates",
+    "python3 .agent/tools/graduate.py <id> --rationale '...' — accept a candidate lesson",
+    "python3 .agent/tools/reject.py <id> --reason '...' — reject a candidate lesson",
+    "python3 .agent/tools/reopen.py <id> — requeue a rejected candidate",
+    "python3 .agent/tools/memory_reflect.py — log an action to episodic memory",
+    "python3 .agent/tools/budget_tracker.py '<action>' — check token budget headroom",
+    "python3 .agent/tools/skill_loader.py <skill-name> — load a skill by name",
+    "python3 .agent/memory/auto_dream.py — run the nightly staging cycle",
+    "python3 .agent/memory/memory_search.py '<query>' — FTS search over memory documents",
+    "install.sh <harness> [project-path] — bash installer for macOS/Linux/Git Bash",
+    "install.ps1 <harness> [project-path] — PowerShell installer for Windows"
+  ]
+}

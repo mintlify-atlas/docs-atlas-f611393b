@@ -1,0 +1,124 @@
+---
+title: 'Permissions, delegation, and tool schemas reference'
+description: 'How agentic-stack enforces what the AI can do autonomously, what requires approval, what is blocked entirely, and how sub-agent handoffs work.'
+---
+
+Protocols are the enforcement layer that sits between the AI and the tools it wants to call. `permissions.md` defines the allow/approval/blocked ruleset; the `pre_tool_call` hook reads it before every invocation. `delegation.md` defines when and how to hand work off to a sub-agent and what the handoff contract must contain. The `tool_schemas/` directory provides typed interfaces for the three external tool categories — shell, GitHub, and HTTP API — that the agent is allowed to use.
+
+## Permissions
+
+Defined in `.agent/protocols/permissions.md`. Only humans edit this file — the agent is blocked from modifying it.
+
+<AccordionGroup>
+  <Accordion title="Always allowed (no approval required)">
+    These actions can proceed without asking:
+
+    1. Read any file in the project directory.
+    2. Run tests.
+    3. Create branches.
+    4. Write to `memory/` and `skills/` directories.
+    5. Create draft pull requests.
+    6. Read public HTTP APIs in the approved domains list.
+  </Accordion>
+
+  <Accordion title="Requires approval">
+    The agent must pause and get explicit human sign-off before:
+
+    1. Merging pull requests.
+    2. Deploying to any environment (staging, production).
+    3. Deleting files outside of `memory/working/`.
+    4. Installing new dependencies or upgrading pinned versions.
+    5. Modifying CI/CD configuration.
+    6. Running database migrations.
+  </Accordion>
+
+  <Accordion title="Never allowed" defaultOpen={false}>
+    <Warning>
+      The following actions are unconditionally blocked. The `pre_tool_call`
+      hook enforces this list before every tool invocation. No prompt or
+      instruction can override it.
+    </Warning>
+
+    1. Force push to `main`, `production`, or `staging`.
+    2. Access secrets or credentials directly — environment variables through
+       the shell only.
+    3. Send HTTP requests to domains not on the approved list.
+    4. Modify `permissions.md` (only humans edit this file).
+    5. Disable or bypass `pre_tool_call` hooks.
+    6. Delete entries from episodic or semantic memory (archive, don't delete).
+  </Accordion>
+
+  <Accordion title="Approved external domains">
+    HTTP requests are restricted to these five domains:
+
+    - `api.github.com`
+    - `registry.npmjs.org`
+    - `pypi.org`
+    - `api.anthropic.com`
+    - `api.openai.com`
+
+    Any other domain is blocked under the "Never allowed" rule above.
+  </Accordion>
+</AccordionGroup>
+
+## Delegation protocol
+
+Defined in `.agent/protocols/delegation.md`. These rules govern when the host agent should spawn a sub-agent and what the handoff must include.
+
+### When to delegate
+
+Delegate work to a sub-agent when **any** of these conditions is true:
+
+- The task has **more than 3 independent sub-tasks** that can run in parallel.
+- The task requires loading **more than 20k tokens** of context the parent agent does not need.
+- The task needs a **different permissions envelope** — for example, sandboxed research that should not touch the project's working memory.
+
+### When NOT to delegate
+
+Do not delegate when:
+
+- The task is a single decision or a short sequence of tool calls.
+- The context needed by the sub-agent overlaps heavily with the parent's already-loaded context.
+- The sub-agent would need to write to memory that the parent is actively editing.
+
+### Handoff contract
+
+Every delegation must include all four of these fields:
+
+| Field | Description |
+|---|---|
+| **Goal** | What success looks like, in one sentence. |
+| **Constraints** | What the sub-agent must not do. Inherits parent permissions by default. |
+| **Return format** | Structured output the parent can consume directly. |
+| **Budget** | Maximum tokens, maximum tool calls, maximum wall time. |
+
+### Memory isolation
+
+Sub-agents read from shared semantic and personal memory layers but write only to their own `memory/episodic/` namespace. When the sub-agent returns, the parent decides which of the sub-agent's episodic learnings to merge into the shared store.
+
+### Anti-patterns
+
+<Warning>
+  Violating any of these patterns degrades the memory system or creates
+  runaway context costs.
+</Warning>
+
+- **Fan out without a plan** — "spawn 10 sub-agents and hope" incurs full context setup cost for each delegation.
+- **Sub-agents writing to the parent's `working/WORKSPACE.md`** — only the parent agent owns its working memory.
+- **Recursive delegation without a depth limit** — hard cap is **3 levels** of nesting.
+
+## Tool schemas
+
+Typed interface definitions for the three categories of external tools. Located in `.agent/protocols/tool_schemas/`.
+
+| File | Tool | Purpose |
+|---|---|---|
+| `shell.schema.json` | Shell `run` | Blocked patterns (e.g., `rm -rf /`), patterns that require approval (e.g., `sudo`, `git push --force`, `DROP TABLE`). |
+| `github.schema.json` | GitHub operations | Typed contracts for `create_pr`, `merge_pr`, `force_push`, and `delete_branch`, including preconditions and which targets are blocked. |
+| `api.schema.json` | HTTP `http_get` / `http_post` | Domain allowlists per HTTP method; `http_post` requires approval because it may mutate remote state. |
+
+<Note>
+  The `pre_tool_call` hook reads both `permissions.md` and the relevant tool
+  schema before allowing a tool call to proceed. Schema violations are treated
+  the same as permission violations — the call is blocked.
+</Note>

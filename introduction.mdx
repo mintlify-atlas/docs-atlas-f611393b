@@ -1,0 +1,103 @@
+---
+title: 'agentic-stack: A portable AI brain for any harness'
+description: 'A portable .agent/ folder with memory, skills, and protocols that gives your AI coding assistant persistent knowledge — no matter which harness you use.'
+keywords: ['agentic-stack', 'AI agent', 'portable brain', 'memory', 'skills', 'harness', 'Claude Code', 'Cursor', 'Windsurf']
+---
+
+agentic-stack is not just a folder template. It ships the files that go *inside* the folder: four memory layers, five seed skills, typed protocol files, a nightly staging cycle, host-agent review tools, and adapter shims for eight harnesses. Drop the `.agent/` directory into any project and your AI gets a working portable brain that carries its knowledge when you change tools.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install in under two minutes and run the onboarding wizard.
+  </Card>
+  <Card title="How it works" icon="brain" href="/how-it-works">
+    Memory layers, skill loading, and the feedback loop explained.
+  </Card>
+  <Card title="Harness guides" icon="plug" href="/harnesses/claude-code">
+    Step-by-step setup for Claude Code, Cursor, Windsurf, and five more.
+  </Card>
+  <Card title="Memory system" icon="database" href="/memory/overview">
+    Four layers with query-aware retrieval and retention policies.
+  </Card>
+  <Card title="Skills" icon="bolt" href="/skills/overview">
+    Progressive disclosure — lightweight manifest always in context.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/reference/cli-commands">
+    Every command, flag, and tool script with real examples.
+  </Card>
+</CardGroup>
+
+## The core concept: harness-agnostic portable brain
+
+Most AI coding assistants store their context inside the harness — which means switching from Claude Code to Cursor, or from Cursor to Windsurf, means starting from scratch. agentic-stack separates the brain from the harness. The `.agent/` folder is self-contained: it holds everything the AI needs to remember, reason, and improve. The harness only contributes the glue — a config file or a rules file — that tells it where to look.
+
+The principle from `architecture.md` captures it directly: *the harness is dumb, the knowledge is in files.*
+
+## Repo layout
+
+```
+.agent/                         # the portable brain (same across harnesses)
+├── AGENTS.md                   # the map
+├── harness/                    # conductor + hooks (standalone path)
+├── memory/                     # working / episodic / semantic / personal
+│   ├── auto_dream.py           # staging-only dream cycle
+│   ├── cluster.py              # content clustering + pattern extraction
+│   ├── promote.py              # stage candidates
+│   ├── validate.py             # heuristic prefilter (length + exact duplicate)
+│   ├── review_state.py         # candidate lifecycle + decision log
+│   ├── render_lessons.py       # lessons.jsonl → LESSONS.md
+│   └── memory_search.py        # [BETA] FTS5 search (opt-in)
+├── skills/                     # _index.md + _manifest.jsonl + SKILL.md files
+├── protocols/                  # permissions + tool schemas + delegation
+└── tools/                      # host-agent CLI + memory_reflect + skill_loader
+    ├── list_candidates.py
+    ├── graduate.py
+    ├── reject.py
+    └── reopen.py
+
+adapters/                       # one small shim per harness
+├── claude-code/   (CLAUDE.md + settings.json hooks)
+├── cursor/        (.cursor/rules/*.mdc)
+├── windsurf/      (.windsurfrules)
+├── opencode/      (AGENTS.md + opencode.json)
+├── openclaw/      (system-prompt include)
+├── hermes/        (AGENTS.md)
+├── pi/            (AGENTS.md + .pi/skills symlink)
+└── standalone-python/  (DIY conductor entrypoint)
+
+docs/                           # architecture, getting-started, per-harness
+install.sh                      # mac / linux / git-bash installer
+install.ps1                     # Windows PowerShell installer
+onboard.py                      # onboarding wizard entry point
+```
+
+## Supported harnesses
+
+agentic-stack works with all major AI coding environments through adapter shims that require no changes to the `.agent/` folder itself.
+
+| Harness | Config file it reads | Hook support |
+|---|---|---|
+| **Claude Code** | `CLAUDE.md` + `.claude/settings.json` | yes (PostToolUse, Stop) |
+| **Cursor** | `.cursor/rules/*.mdc` | no (manual reflect calls) |
+| **Windsurf** | `.windsurfrules` | no (manual reflect calls) |
+| **OpenCode** | `AGENTS.md` + `opencode.json` | partial (permission rules) |
+| **OpenClaw** | system-prompt include | varies by fork |
+| **Hermes Agent** | `AGENTS.md` (agentskills.io compatible) | partial (own memory) |
+| **Pi Coding Agent** | `AGENTS.md` + `.pi/skills/` | no (extension system) |
+| **Standalone Python** | `run.py` (any LLM) | yes (full control) |
+
+## Key features
+
+**Memory layers.** Four layers — `working/`, `episodic/`, `semantic/`, `personal/` — each with its own retention policy. Query-aware retrieval ranks entries by salience and relevance. Episodic events compress nightly into reviewable candidate lessons.
+
+**Skills.** Progressive disclosure keeps context lean. A lightweight `_index.md` and `_manifest.jsonl` are always loaded; a full `SKILL.md` only enters context when the task matches its triggers. Every skill ships with a self-rewrite hook that fires after repeated failures.
+
+**Protocols.** `permissions.md` defines what is allowed, what requires approval, and what is never allowed. A pre-tool-call hook enforces it. `tool_schemas/` provides typed interfaces for every external tool. `delegation.md` governs sub-agent handoff.
+
+**Review protocol.** `auto_dream.py` runs nightly and stages candidate lessons mechanically — it clusters patterns, runs a heuristic prefilter, and writes a review queue. It never reasons, never promotes, and never commits. The host agent reviews staged candidates via CLI tools (`graduate.py`, `reject.py`, `reopen.py`) and must supply a rationale to graduate a lesson. No unattended reasoning.
+
+**Dream cycle.** The nightly cycle clusters episodic events, extracts recurring patterns, prefilters obvious junk, decays old entries, and writes `REVIEW_QUEUE.md`. The next session opens with a clear picture of what needs review.
+
+<Tip>
+  Run `git add .agent/memory/` to track your brain in version control. `git log .agent/memory/` becomes the agent's autobiography.
+</Tip>

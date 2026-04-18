@@ -1,0 +1,137 @@
+---
+title: "Pi Coding Agent harness guide for agentic-stack brain"
+description: "Install the agentic-stack brain into Pi Coding Agent via AGENTS.md and a .pi/skills symlink, new in v0.6.0 and safe to run alongside Hermes and OpenCode."
+---
+
+The Pi Coding Agent adapter (new in v0.6.0) layers the portable `.agent/` brain on top of Pi — a minimalist terminal coding harness by Mario Zechner with support for 15+ LLM providers and a TypeScript extension system. The adapter writes `AGENTS.md` at your project root (skipping it if one already exists from a prior hermes or opencode install), creates a `.pi/` directory, and symlinks `.pi/skills` to `.agent/skills` so Pi sees your full skill tree with zero duplication.
+
+## What gets installed
+
+| File / directory | Purpose |
+|---|---|
+| `AGENTS.md` | Workspace-level context read natively by Pi; points at `.agent/` (skipped if already present) |
+| `.pi/` | Pi configuration directory; ready for extensions, prompt templates, and system overrides |
+| `.pi/skills` → `.agent/skills` | Symlink so Pi sees all portable-brain skills without a separate copy |
+
+<Note>
+On Windows systems without developer mode enabled, symlinks are not supported. The installer falls back to a full copy of `.agent/skills/` into `.pi/skills/`. Changes to `.agent/skills/` will not propagate automatically — re-run `./install.sh pi` to sync.
+</Note>
+
+## Supported harnesses reference
+
+| Harness | Config file | Hook support |
+|---|---|---|
+| **Claude Code** | `CLAUDE.md` + `.claude/settings.json` | yes (PostToolUse, Stop) |
+| **Cursor** | `.cursor/rules/*.mdc` | no (manual reflect calls) |
+| **Windsurf** | `.windsurfrules` | no (manual reflect calls) |
+| **OpenCode** | `AGENTS.md` + `opencode.json` | partial (permission rules) |
+| **OpenClaw** | system-prompt include | varies by fork |
+| **Hermes Agent** | `AGENTS.md` (agentskills.io compatible) | partial (own memory) |
+| **Pi Coding Agent** | `AGENTS.md` + `.pi/skills/` | no (extension system) |
+| **Standalone Python** | `run.py` (any LLM) | yes (full control) |
+
+## Install steps
+
+<Steps>
+  <Step title="Run the agentic-stack installer">
+    From your project root, run the Pi adapter installer. The onboarding wizard launches automatically.
+
+    <CodeGroup>
+
+    ```bash macOS / Linux
+    ./install.sh pi
+    ```
+
+    ```powershell Windows
+    .\install.ps1 pi C:\path\to\your-project
+    ```
+
+    </CodeGroup>
+
+    If `AGENTS.md` already exists (from a prior hermes or opencode install), the installer skips writing it and prints a message. Pi will read the existing file — no action needed.
+  </Step>
+  <Step title="Install Pi Coding Agent">
+    If Pi is not yet installed, install it globally via npm:
+
+    ```bash
+    npm install -g @mariozechner/pi-coding-agent
+    ```
+  </Step>
+  <Step title="Start Pi">
+    Launch Pi from your project root:
+
+    ```bash
+    pi
+    ```
+  </Step>
+  <Step title="Verify the wiring">
+    In Pi, ask:
+
+    ```
+    What's in my LESSONS file?
+    ```
+
+    Pi should read `.agent/memory/semantic/LESSONS.md`. To confirm skills are visible, run:
+
+    ```bash
+    pi skills list
+    ```
+
+    You should see entries from `.pi/skills/`, which is symlinked to `.agent/skills/`.
+  </Step>
+</Steps>
+
+## How Pi reads the brain
+
+Pi loads `AGENTS.md` (or `CLAUDE.md`) from `~/.pi/agent/` and then walks the current directory up to the filesystem root, aggregating context files. The adapter's `AGENTS.md` at your project root is picked up during this walk and directs Pi to the portable brain in `.agent/`.
+
+Skills at `.pi/skills/<name>/SKILL.md` use the same frontmatter-plus-body shape as agentskills.io and the `.agent/skills/` layout. The symlink means there is one canonical skill tree: customize under `.agent/skills/` and Pi sees the changes immediately on next session.
+
+Pi extensions (TypeScript, optional) live in `.pi/extensions/`. These are separate from the agentic-stack skill system and are not required.
+
+## Coexisting with other adapters
+
+Pi, Hermes, and OpenCode all read `AGENTS.md` from the project root. You can install any combination — only the first adapter to run writes the root `AGENTS.md`; subsequent installs are no-ops on that file. All three harnesses read the same content.
+
+<Tip>
+If you install all three (pi + hermes + opencode), run them in any order. The installers are safe to overlap. The only difference is which harness writes `AGENTS.md` first — they all read the same portable brain regardless.
+</Tip>
+
+## Memory logging
+
+Pi does not expose a native post-tool hook through its extension system. Memory logging is instruction-driven: `AGENTS.md` directs the model to call `memory_reflect.py` after significant actions. Call it manually from the terminal to record an observation outside of a model-driven call:
+
+```bash
+python3 .agent/tools/memory_reflect.py pi manual ok
+```
+
+Run the dream cycle to stage candidate lessons:
+
+```bash
+python3 .agent/memory/auto_dream.py
+```
+
+## Customizing
+
+**System prompt override:** Drop a `.pi/SYSTEM.md` at your project root if you want to replace Pi's default system prompt entirely. This is Pi-specific and separate from `AGENTS.md`.
+
+**Prompt templates:** Place templates in `.pi/prompts/`.
+
+**TypeScript extensions:** Place them in `.pi/extensions/` (advanced; see Pi's own documentation).
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="pi skills list shows no entries">
+    Run `pi skills list` and check whether `.pi/skills/` is a valid symlink. If the symlink is broken (for example, `.agent/` was moved), re-run `./install.sh pi` to rebuild it. On Windows without symlink support, re-run the installer to copy the latest skills.
+  </Accordion>
+  <Accordion title="AGENTS.md was skipped but Pi doesn't see the brain">
+    The existing `AGENTS.md` may not point at `.agent/`. Open it and confirm it contains the startup read-order block directing Pi to `.agent/AGENTS.md` and the memory files. If it was written by a different tool entirely, you can overwrite it by running `./install.sh pi --force` or manually adding the agentic-stack block.
+  </Accordion>
+  <Accordion title="Skills changes under .agent/skills/ aren't visible in Pi">
+    If `.pi/skills` is a symlink, changes appear immediately. If it is a copy (Windows fallback), re-run the installer to sync: `./install.sh pi`. The installer uses `cp -R`, which will overwrite the copy with the current state of `.agent/skills/`.
+  </Accordion>
+  <Accordion title="Pi reports multiple models — which one does the brain use?">
+    The portable `.agent/` brain is model-agnostic. It reads and writes Markdown and JSONL files and does not store provider-specific state. Pi's multi-provider gateway is independent of the brain; whichever model Pi uses for a session, the brain context is the same.
+  </Accordion>
+</AccordionGroup>

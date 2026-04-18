@@ -1,0 +1,168 @@
+---
+title: "Standalone Python harness guide for agentic-stack brain"
+description: "Run agentic-stack with any LLM backend using the standalone Python conductor for full hook control, automatic memory logging, and a provider-agnostic loop."
+---
+
+The standalone Python adapter gives you the highest level of control in the agentic-stack harness lineup. It installs `run.py` — a thin entrypoint that bootstraps the conductor from `.agent/harness/` — and hands you the full loop: tool calling, memory logging, the dream cycle, and permission enforcement, all without depending on Cursor, Claude Code, Windsurf, or any IDE. You can back it with any supported LLM provider and run it from cron, a file watcher, a CI job, or any other orchestration layer.
+
+## What gets installed
+
+| File | Purpose |
+|---|---|
+| `run.py` | Conductor entrypoint; locates `.agent/` and delegates to `conductor.run()` |
+
+The conductor itself lives in `.agent/harness/` as part of the portable brain, which is installed at the same time.
+
+## Supported harnesses reference
+
+| Harness | Config file | Hook support |
+|---|---|---|
+| **Claude Code** | `CLAUDE.md` + `.claude/settings.json` | yes (PostToolUse, Stop) |
+| **Cursor** | `.cursor/rules/*.mdc` | no (manual reflect calls) |
+| **Windsurf** | `.windsurfrules` | no (manual reflect calls) |
+| **OpenCode** | `AGENTS.md` + `opencode.json` | partial (permission rules) |
+| **OpenClaw** | system-prompt include | varies by fork |
+| **Hermes Agent** | `AGENTS.md` (agentskills.io compatible) | partial (own memory) |
+| **Pi Coding Agent** | `AGENTS.md` + `.pi/skills/` | no (extension system) |
+| **Standalone Python** | `run.py` (any LLM) | yes (full control) |
+
+## Requirements
+
+Install the Python dependencies before running:
+
+```bash
+pip install -r requirements.txt
+```
+
+The required packages are:
+
+```text requirements.txt
+anthropic>=0.34.0
+openai>=1.40.0
+```
+
+Both packages are listed so you can switch providers without reinstalling. The conductor loads only the one that matches `AGENT_PROVIDER`.
+
+## Install steps
+
+<Steps>
+  <Step title="Run the installer">
+    From your project root, run the adapter installer. The onboarding wizard launches automatically and populates `.agent/memory/personal/PREFERENCES.md`.
+
+    <CodeGroup>
+
+    ```bash macOS / Linux
+    ./install.sh standalone-python
+    ```
+
+    ```powershell Windows
+    .\install.ps1 standalone-python C:\path\to\your-project
+    ```
+
+    </CodeGroup>
+  </Step>
+  <Step title="Install Python dependencies">
+    ```bash
+    pip install -r requirements.txt
+    ```
+  </Step>
+  <Step title="Set your API key">
+    Export the key for your chosen provider:
+
+    <CodeGroup>
+
+    ```bash Anthropic (default)
+    export ANTHROPIC_API_KEY=your-key-here
+    ```
+
+    ```bash OpenAI
+    export OPENAI_API_KEY=your-key-here
+    export AGENT_PROVIDER=openai
+    ```
+
+    </CodeGroup>
+  </Step>
+  <Step title="Run the conductor">
+    Pass a prompt as a command-line argument:
+
+    ```bash
+    python run.py "reflect on today's work"
+    python run.py "commit the staged changes"
+    ```
+  </Step>
+</Steps>
+
+## Choosing a provider and model
+
+The conductor reads two environment variables:
+
+```bash
+export AGENT_PROVIDER=anthropic   # default; also accepts: openai
+export AGENT_MODEL=claude-sonnet-4-5
+```
+
+```bash
+export AGENT_PROVIDER=openai
+export AGENT_MODEL=gpt-4o
+```
+
+Set these in your shell profile, a `.env` file loaded by your runner, or a CI secret. The conductor does not hard-code any model name.
+
+## Hook behavior
+
+The standalone conductor gives you full hook control. Unlike IDE-based harnesses that depend on the host application's event system, the conductor owns the loop directly:
+
+- **After every tool call:** `memory_reflect.py` is invoked automatically by the conductor — no manual calls required.
+- **On loop exit:** `auto_dream.py` runs the staging cycle, clustering episodic entries into candidate lessons.
+- **Pre-tool-call:** The `pre_tool_call` hook checks the action against `.agent/protocols/permissions.md` and can abort a call before it executes.
+
+The conductor does not decide which skills to load. That is the context builder's job, which performs trigger matching against the task prompt and assembles the context window within a token budget.
+
+## Memory logging
+
+Memory logging is fully automatic — the conductor logs after every call without any manual intervention. If you want to trigger a reflection outside of a conductor run, call the script directly:
+
+```bash
+python3 .agent/tools/memory_reflect.py standalone manual ok
+```
+
+## Scheduling the dream cycle
+
+Run `auto_dream.py` nightly to stage candidate lessons from accumulated episodic entries:
+
+```bash
+crontab -e
+```
+
+Add the following line (adjust the path to your project):
+
+```bash
+0 3 * * * cd /path/to/project && python3 .agent/memory/auto_dream.py >> .agent/memory/dream.log 2>&1
+```
+
+`auto_dream.py` is safe to run unattended: it performs only mechanical file operations (cluster, stage, prefilter, decay) with no git commits, no network calls, and no reasoning.
+
+## Customizing
+
+**Add a new tool:** Implement it in `.agent/harness/` and register it in the conductor's tool registry. The conductor's tool-calling loop will invoke it the same way it invokes built-in tools, and the `pre_tool_call` hook will enforce permissions on it automatically.
+
+**Wrap in a file watcher:** Run `run.py` from any file-watching script or CI trigger. Because `run.py` is a plain command-line script, it composes with any orchestration layer that can invoke a subprocess.
+
+**Use as a side channel:** Run the conductor in a parallel terminal alongside Cursor or Windsurf to add automatic memory logging to a harness that lacks native hooks. The conductor's log entries are written to the same `.agent/memory/episodic/` directory, so the dream cycle sees the full combined history.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title=".agent/ not found error on startup">
+    `run.py` walks up to three parent directories looking for `.agent/`. Run it from your project root (the directory that contains `.agent/`), or ensure the project root is within three levels above wherever `run.py` is located.
+  </Accordion>
+  <Accordion title="ImportError: cannot import name 'run' from conductor">
+    The conductor module lives in `.agent/harness/conductor.py`. If `.agent/` was not installed or was installed in a different directory than `run.py` is searching, the import will fail. Re-run `./install.sh standalone-python` from the correct project root to ensure both files are co-located.
+  </Accordion>
+  <Accordion title="Wrong model or provider is being used">
+    Check the values of `AGENT_PROVIDER` and `AGENT_MODEL` in the current shell environment. `echo $AGENT_PROVIDER` should print your intended provider. If it is empty, the conductor defaults to `anthropic`. Set the variables explicitly before invoking `run.py`.
+  </Accordion>
+  <Accordion title="Dream cycle stages too many low-quality candidates">
+    The staging cycle uses a heuristic prefilter (length and exact-duplicate checks) before clustering. If you are seeing many near-duplicate or very short candidates, adjust the validation thresholds in `.agent/memory/validate.py`. Candidates that pass the filter but do not meet your quality bar can be rejected with a reason using `reject.py`, which preserves the decision history for future reference.
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,112 @@
+---
+title: "Cursor harness guide — agentic-stack brain setup"
+description: "Install the agentic-stack brain into Cursor via an alwaysApply MDC rule, with guidance on manual memory logging and the standalone-python side channel."
+---
+
+The Cursor adapter injects agentic-stack's protocols into every Cursor session by writing a single `.mdc` rule file that Cursor loads automatically. Because Cursor does not expose a native post-tool hook, memory logging is instruction-driven: the rule file tells the model to call `memory_reflect.py` after significant actions. If you want fully automatic logging, the standalone-python conductor can run in parallel as a side channel.
+
+## What gets installed
+
+| File | Purpose |
+|---|---|
+| `.cursor/rules/agentic-stack.mdc` | Always-on rule injected into every Cursor session; points the model at `.agent/` |
+
+## Supported harnesses reference
+
+| Harness | Config file | Hook support |
+|---|---|---|
+| **Claude Code** | `CLAUDE.md` + `.claude/settings.json` | yes (PostToolUse, Stop) |
+| **Cursor** | `.cursor/rules/*.mdc` | no (manual reflect calls) |
+| **Windsurf** | `.windsurfrules` | no (manual reflect calls) |
+| **OpenCode** | `AGENTS.md` + `opencode.json` | partial (permission rules) |
+| **OpenClaw** | system-prompt include | varies by fork |
+| **Hermes Agent** | `AGENTS.md` (agentskills.io compatible) | partial (own memory) |
+| **Pi Coding Agent** | `AGENTS.md` + `.pi/skills/` | no (extension system) |
+| **Standalone Python** | `run.py` (any LLM) | yes (full control) |
+
+## Install steps
+
+<Steps>
+  <Step title="Run the installer">
+    From your project root, run the adapter installer. The onboarding wizard launches automatically and populates `.agent/memory/personal/PREFERENCES.md`.
+
+    <CodeGroup>
+
+    ```bash macOS / Linux
+    ./install.sh cursor
+    ```
+
+    ```powershell Windows
+    .\install.ps1 cursor C:\path\to\your-project
+    ```
+
+    </CodeGroup>
+  </Step>
+  <Step title="Verify the rule is active">
+    Open Cursor and ask in chat:
+
+    ```
+    What files should you read before acting?
+    ```
+
+    Cursor should mention `.agent/AGENTS.md`. If it does, the rule is loaded.
+  </Step>
+</Steps>
+
+## How Cursor loads MDC rules
+
+Cursor scans `.cursor/rules/` recursively at session start and prepends every `.mdc` file marked `alwaysApply: true` to the system prompt. The installed rule carries this frontmatter:
+
+```yaml
+---
+alwaysApply: true
+---
+```
+
+The `alwaysApply` flag keeps the rule in context even when the user is working on files unrelated to the agentic-stack brain. Rules without this flag are only injected when Cursor judges them relevant to the current task.
+
+<Warning>
+Every `.mdc` file must have valid YAML frontmatter. A missing or malformed frontmatter block will cause Cursor to ignore the file entirely. If the rule is not loading, inspect the frontmatter first.
+</Warning>
+
+You can add project-specific overrides by creating additional `.mdc` files alongside `agentic-stack.mdc`. Cursor loads all of them.
+
+## Memory logging
+
+Cursor has no native post-tool hook. The rule file instructs the model to call `memory_reflect.py` after significant actions, but this depends on the model following the instruction. Two approaches are available:
+
+**Manual (default):** The model calls reflect as instructed. You can also call it yourself from the terminal at any point:
+
+```bash
+python3 .agent/tools/memory_reflect.py cursor manual ok
+```
+
+**Automatic via side channel:** Run the standalone-python conductor in a separate terminal session alongside Cursor. It maintains its own event loop, logs every action automatically, and runs the dream cycle on exit — giving you the same automatic logging behavior as the Claude Code adapter without requiring Cursor hook support.
+
+```bash
+python run.py "reflect on today's work"
+```
+
+<Tip>
+The standalone-python side channel is the recommended path if you rely on agentic-stack's memory compounding and want zero missed log entries. See the [standalone-python guide](/harnesses/standalone-python) for setup.
+</Tip>
+
+## Customizing the rule file
+
+To modify the instructions injected into every Cursor session, edit `.cursor/rules/agentic-stack.mdc` directly. Keep the YAML frontmatter intact at the top of the file.
+
+If you want to split concerns — for example, keep skill instructions in one file and memory instructions in another — create additional `.mdc` files in `.cursor/rules/`. Cursor merges all of them into the system prompt.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Cursor ignores the rule file">
+    The most common cause is malformed YAML frontmatter. Open `.cursor/rules/agentic-stack.mdc` and confirm the frontmatter block opens with `---`, contains valid YAML, and closes with `---`. A missing closing delimiter is enough to break parsing.
+  </Accordion>
+  <Accordion title="Model doesn't call memory_reflect.py">
+    This is expected behavior — Cursor has no enforcement mechanism for post-tool actions. Add an explicit reminder in your project instructions, or switch to the standalone-python side channel for automatic logging.
+  </Accordion>
+  <Accordion title="Rule loads but agent ignores .agent/ files">
+    Confirm `.agent/` was installed alongside the adapter. The installer copies the portable brain first, then writes the rule file. If you copied the `.mdc` file manually without running the full installer, `.agent/` may be absent.
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,160 @@
+---
+title: "Full-text memory search [Beta]: FTS5 keyword queries"
+description: "Opt-in FTS5 keyword search over all memory documents, with automatic fallback to ripgrep or grep when SQLite FTS5 is not available."
+---
+
+Memory search is an opt-in beta feature that lets you run keyword queries across all `.md` and `.jsonl` files under `.agent/memory/`. It uses SQLite's FTS5 extension with Porter stemming for ranked results, and falls back to ripgrep (`rg`) or standard `grep` when FTS5 is not available. Implementation files like `auto_dream.py` and `cluster.py` are never included in results — search is restricted to memory documents only.
+
+<Warning>
+Memory search is **off by default**. It is a beta feature that must be explicitly opted in. Queries issued without enabling the feature will print an error and exit with code 2.
+</Warning>
+
+## Enabling memory search
+
+**During onboarding:** the wizard asks about optional features. Select `yes` when prompted to enable FTS memory search.
+
+**On an existing project:** re-run the wizard with `--reconfigure`:
+
+```bash
+agentic-stack <harness> --reconfigure
+```
+
+**Manually:** edit `.agent/memory/.features.json` directly. Create the file if it does not exist:
+
+```json
+{
+  "memory_search_fts": {
+    "enabled": true,
+    "beta": true
+  }
+}
+```
+
+The `beta` field is informational only; `enabled` is the control. A missing key, a missing file, or `"enabled": false` all resolve to disabled.
+
+## Search commands
+
+<CodeGroup>
+
+```bash Search by keyword
+python3 .agent/memory/memory_search.py "deploy failure"
+```
+
+```bash Show index status
+python3 .agent/memory/memory_search.py --status
+```
+
+```bash Rebuild the index
+python3 .agent/memory/memory_search.py --rebuild
+```
+
+</CodeGroup>
+
+### Keyword search
+
+```bash
+python3 .agent/memory/memory_search.py "deploy failure"
+```
+
+Results are ranked by relevance. Each result shows the relative file path and a snippet with the matching terms highlighted by `>>>` and `<<<` markers:
+
+```
+Results for: 'deploy failure'  [mode: FTS5]
+
+  episodic/AGENT_LEARNINGS.jsonl
+  ...deploy failed on >>>staging<<< due to missing >>>env<<< var...
+
+  semantic/LESSONS.md
+  >>>Deploy<<< checklist must run before any >>>production<<< push...
+```
+
+Multi-word queries work as AND by default in FTS5. Phrase queries use double quotes inside the query string:
+
+```bash
+python3 .agent/memory/memory_search.py '"exact phrase"'
+```
+
+### Index status
+
+The `--status` command always works, even when the feature is disabled. Use it to confirm the current mode without triggering the opt-in gate:
+
+```bash
+python3 .agent/memory/memory_search.py --status
+```
+
+Example output when enabled with FTS5 available:
+
+```
+Feature: memory_search_fts [BETA] — ENABLED
+Mode: FTS5
+Index: 24 files indexed (18 KB)
+Location: /path/to/project/.agent/memory/.index/memory.db
+Fallback available: ripgrep
+```
+
+Example output when disabled:
+
+```
+Feature: memory_search_fts [BETA] — DISABLED (beta, opt-in)
+Enable via: agentic-stack <harness> --reconfigure
+Or edit .agent/memory/.features.json directly.
+```
+
+### Rebuild the index
+
+The index rebuilds automatically when any memory file changes, is renamed, or is deleted. Force a manual rebuild with:
+
+```bash
+python3 .agent/memory/memory_search.py --rebuild
+```
+
+`--rebuild` requires the feature to be enabled and FTS5 to be available.
+
+## Fallback chain
+
+`memory_search.py` selects a search engine at runtime in this order:
+
+<Steps>
+  <Step title="SQLite FTS5 (preferred)">
+    Checks whether the current Python build's SQLite includes the FTS5 extension. If available, builds or uses the cached index at `.agent/memory/.index/memory.db`. Results are ranked using BM25 with Porter stemming via the `unicode61` tokenizer.
+  </Step>
+  <Step title="ripgrep (rg)">
+    If FTS5 is not available but `rg` is on `PATH`, falls back to `ripgrep`. Runs case-insensitive, restricted to the explicit list of `.md` and `.jsonl` files — not the whole directory. Returns matching file paths without ranking or snippets.
+  </Step>
+  <Step title="grep">
+    If neither FTS5 nor ripgrep is available, falls back to `grep -ril`. Same file restriction applies. Returns matching file paths.
+  </Step>
+</Steps>
+
+<Note>
+`--status` shows which fallback would be used: `Fallback available: ripgrep` or `Fallback available: grep`. If neither tool is available it reports `unavailable`. Install ripgrep for best fallback performance: `brew install ripgrep` or `apt install ripgrep`.
+</Note>
+
+## Index location and gitignore
+
+The FTS5 index is stored at:
+
+```
+.agent/memory/.index/memory.db
+```
+
+The `.index/` directory is gitignored. Each developer's index is local to their machine and rebuilds automatically from the memory files, which are tracked in git.
+
+The index is invalidated (and rebuilt on next search) when:
+
+- Any memory file is newer than the index
+- A file that was indexed no longer exists (delete or rename)
+- The index file itself is missing or has a corrupt schema
+
+## What gets indexed
+
+Only memory documents are indexed. The `memory_search.py` script uses an explicit suffix allowlist:
+
+| File type | Indexed | Notes |
+|-----------|---------|-------|
+| `.md` files | Yes | Full text |
+| `.jsonl` files | Yes | `action`, `reflection`, `detail`, and `skill` fields only |
+| `.py` files | No | Implementation files are never indexed |
+| `.json` files | No | Candidate metadata files are not indexed |
+
+For `.jsonl` files, each line is parsed as JSON and only the relevant text fields are extracted and concatenated. Malformed JSON lines are skipped silently.

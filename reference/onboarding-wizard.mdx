@@ -1,0 +1,133 @@
+---
+title: 'Onboarding wizard — questions, flags, and CI behavior'
+description: 'How the interactive setup wizard works, what questions it asks, what files it writes, and how to skip or re-run it in CI and scripted environments.'
+---
+
+The onboarding wizard runs automatically after `agentic-stack <harness>` copies the `.agent/` brain into your project. Its sole job is to populate `.agent/memory/personal/PREFERENCES.md` — the first file your AI reads at the start of every session — and to write the feature-toggle file at `.agent/memory/.features.json`. Completing the wizard takes about 30 seconds. Every question is skippable with Enter, and the whole wizard can be bypassed with `--yes` or skipped automatically in CI environments.
+
+## Preference questions
+
+The wizard asks six questions in order. Pressing Enter accepts the default for that question.
+
+| Question | Default |
+|---|---|
+| What should I call you? | *(skip — no value written)* |
+| Primary language(s)? | `unspecified` |
+| Explanation style? | `concise` |
+| Test strategy? | `test-after` |
+| Commit message style? | `conventional commits` |
+| Code review depth? | `critical issues only` |
+
+Answers are rendered into sections inside `PREFERENCES.md`:
+
+- **Identity** — only written if you provide a name.
+- **Code style** — language(s) and explanation style.
+- **Workflow** — test strategy and commit style.
+- **Communication** — review depth, plus hardcoded defaults: `Tone: direct, skip pleasantries` and `Surface tradeoffs: always`.
+- **Constraints** — a placeholder section you edit manually for stack-specific rules.
+
+## Optional features
+
+After the six preference questions, the wizard presents an opt-in beta features step.
+
+| Feature | Default |
+|---|---|
+| Enable FTS memory search `[BETA]` | `no` |
+
+The answer is stored in `.agent/memory/.features.json` rather than `PREFERENCES.md`, keeping feature toggles separate from prose preferences.
+
+### `.features.json` structure
+
+```json
+{
+  "memory_search_fts": {
+    "enabled": false,
+    "beta": true
+  }
+}
+```
+
+Set `"enabled": true` to activate FTS memory search. You can edit this file directly at any time — the AI re-reads it every session.
+
+## Files written
+
+| File | Path | Description |
+|---|---|---|
+| `PREFERENCES.md` | `.agent/memory/personal/PREFERENCES.md` | User conventions read by the AI every session. |
+| `.features.json` | `.agent/memory/.features.json` | Feature toggles for opt-in beta functionality. |
+
+## Flags
+
+<ParamField path="--yes / -y" type="flag">
+  Accept all defaults without showing any prompts. Every preference is set to
+  its default value and all beta features are disabled. Use in CI or scripted
+  installs.
+
+  ```bash
+  agentic-stack claude-code --yes
+  ```
+</ParamField>
+
+<ParamField path="--reconfigure" type="flag">
+  Re-run the wizard even if `PREFERENCES.md` already has content. The existing
+  file is backed up to `PREFERENCES.md.bak` before being overwritten.
+
+  ```bash
+  agentic-stack claude-code --reconfigure
+  ```
+</ParamField>
+
+<ParamField path="--force" type="flag">
+  Overwrite `PREFERENCES.md` without creating a backup, even if it contains
+  custom content. Combine with `--reconfigure` to both re-run the wizard and
+  skip the backup.
+
+  ```bash
+  agentic-stack claude-code --force
+  ```
+</ParamField>
+
+## CI behavior
+
+The wizard detects non-interactive environments automatically. If either of these conditions is true, the wizard is skipped entirely without writing any files:
+
+- `sys.stdin` is not a TTY (piped input or redirected stdin).
+- Any of the following environment variables is set to a truthy value:
+
+| Variable | CI system |
+|---|---|
+| `CI` | Generic / most systems |
+| `GITHUB_ACTIONS` | GitHub Actions |
+| `CIRCLECI` | CircleCI |
+| `BUILDKITE` | Buildkite |
+| `JENKINS_URL` | Jenkins |
+| `TRAVIS` | Travis CI |
+
+When the wizard is skipped, the installer prints:
+
+```
+[onboard] non-interactive — skipping wizard (edit .agent/memory/personal/PREFERENCES.md manually)
+```
+
+To write defaults in CI without skipping, pass `--yes` explicitly:
+
+```bash
+agentic-stack claude-code --yes
+```
+
+## Editing preferences manually
+
+`PREFERENCES.md` is plain Markdown. Edit it any time — the AI re-reads it at the start of every session. There is no need to re-run the wizard.
+
+```bash
+# Open the file in your editor
+$EDITOR .agent/memory/personal/PREFERENCES.md
+```
+
+To change a feature toggle after setup, edit `.agent/memory/.features.json` directly or re-run the wizard with `--reconfigure`.
+
+<Tip>
+  Track your brain in version control. After setup, run
+  `git add .agent/memory/` so preference changes and graduated lessons become
+  part of your project's history.
+</Tip>

@@ -1,0 +1,160 @@
+---
+title: "Claude Code harness guide — agentic-stack brain setup"
+description: "Install the agentic-stack brain into Claude Code with full PostToolUse and Stop hook support for automatic memory logging and dream-cycle runs."
+---
+
+The Claude Code adapter gives you the deepest integration agentic-stack offers. It writes two files — `CLAUDE.md` and `.claude/settings.json` — and wires up native Claude Code hooks so every `Bash`, `Edit`, and `Write` call is logged to episodic memory automatically, and the dream cycle runs the moment a session ends. No manual reflect calls required.
+
+## What gets installed
+
+| File | Purpose |
+|---|---|
+| `CLAUDE.md` | Project-root memory file; tells Claude Code to read `.agent/` before acting |
+| `.claude/settings.json` | Hook definitions, matcher patterns, and `permissions.deny` rules |
+
+## Supported harnesses reference
+
+| Harness | Config file | Hook support |
+|---|---|---|
+| **Claude Code** | `CLAUDE.md` + `.claude/settings.json` | yes (PostToolUse, Stop) |
+| **Cursor** | `.cursor/rules/*.mdc` | no (manual reflect calls) |
+| **Windsurf** | `.windsurfrules` | no (manual reflect calls) |
+| **OpenCode** | `AGENTS.md` + `opencode.json` | partial (permission rules) |
+| **OpenClaw** | system-prompt include | varies by fork |
+| **Hermes Agent** | `AGENTS.md` (agentskills.io compatible) | partial (own memory) |
+| **Pi Coding Agent** | `AGENTS.md` + `.pi/skills/` | no (extension system) |
+| **Standalone Python** | `run.py` (any LLM) | yes (full control) |
+
+## Install steps
+
+<Steps>
+  <Step title="Run the installer">
+    From your project root, run the adapter installer. The onboarding wizard launches automatically after the files are copied.
+
+    <CodeGroup>
+
+    ```bash macOS / Linux
+    ./install.sh claude-code
+    ```
+
+    ```powershell Windows
+    .\install.ps1 claude-code C:\path\to\your-project
+    ```
+
+    </CodeGroup>
+
+    Pass `--yes` to accept all wizard defaults without prompts (useful in CI):
+
+    ```bash
+    ./install.sh claude-code --yes
+    ```
+  </Step>
+  <Step title="Verify the wiring">
+    Open Claude Code in the project directory and ask:
+
+    ```
+    What's in my lessons file?
+    ```
+
+    Claude Code should read `.agent/memory/semantic/LESSONS.md`. If it does, the hook wiring is live.
+  </Step>
+</Steps>
+
+## Hook behavior
+
+The `.claude/settings.json` that gets installed contains two hook entries:
+
+```json .claude/settings.json
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .agent/tools/memory_reflect.py claude-code post-tool ok"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .agent/memory/auto_dream.py"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(rm -rf /*)"
+    ]
+  }
+}
+```
+
+- **PostToolUse** fires after every `Bash`, `Edit`, or `Write` tool call and appends an entry to `.agent/memory/episodic/AGENT_LEARNINGS.jsonl` via `memory_reflect.py`.
+- **Stop** fires when the session ends and runs `auto_dream.py`, which clusters episodic entries into candidate lessons. Candidates are staged for review — nothing is auto-graduated.
+
+## Memory logging
+
+Memory logging is fully automatic through the hooks above. You do not need to call `memory_reflect.py` manually. If you want to trigger a reflection outside of a tool call — for example, from a terminal — you can still run it directly:
+
+```bash
+python3 .agent/tools/memory_reflect.py claude-code manual ok
+```
+
+After candidates have been staged by the dream cycle, review and graduate them with the host-agent CLI:
+
+```bash
+python3 .agent/tools/list_candidates.py
+python3 .agent/tools/graduate.py <id> --rationale "evidence holds"
+python3 .agent/tools/reject.py <id> --reason "too narrow to generalize"
+```
+
+## Customizing settings.json
+
+Edit `.claude/settings.json` to change which tools trigger the PostToolUse hook or to add additional deny rules.
+
+**Change the tool matcher** — the `matcher` value is a `|`-delimited list of tool names:
+
+```json
+"matcher": "Bash|Edit|Write|MultiEdit"
+```
+
+**Add a deny rule** — the `permissions.deny` list accepts glob patterns in the format `Tool(pattern)`:
+
+```json
+"permissions": {
+  "deny": [
+    "Bash(git push --force*)",
+    "Bash(rm -rf /*)",
+    "Bash(git reset --hard*)"
+  ]
+}
+```
+
+<Note>
+`permissions.deny` in `.claude/settings.json` is the Claude Code-level fence — the runtime will refuse the tool call before the model sees a result. `.agent/protocols/permissions.md` is the content-level fence that the model reads at session start. Use both: the settings fence for hard stops, the protocol file for policy the model should reason about.
+</Note>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Hooks don't fire after install">
+    Run `claude settings` (or check Claude Code's settings panel) and confirm the merged config includes the `PostToolUse` and `Stop` entries. If Claude Code is loading a user-level `settings.json` that conflicts, the project-level file may be partially shadowed. Move conflicting entries to the project file or merge them manually.
+  </Accordion>
+  <Accordion title="Agent ignores CLAUDE.md">
+    Claude Code reads `CLAUDE.md` from the project root as project-level memory. Make sure you opened Claude Code with the directory that contains `CLAUDE.md` as the workspace root, not a subdirectory. Versions older than the project-root memory feature may not read it — update Claude Code.
+  </Accordion>
+  <Accordion title="memory_reflect.py exits with an error">
+    The script requires Python 3 and expects `.agent/` to be present relative to the working directory. Confirm that `python3` resolves correctly in the shell Claude Code uses for hooks, and that `.agent/` was installed alongside the adapter files.
+  </Accordion>
+</AccordionGroup>

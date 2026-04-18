@@ -1,0 +1,406 @@
+---
+title: 'agentic-stack CLI commands and tool scripts reference'
+description: 'Complete reference for the agentic-stack CLI, installer scripts, review tools, and memory utilities — including every flag, argument, and harness value.'
+---
+
+The `agentic-stack` command (installed via Homebrew) and its companion installer scripts copy the `.agent/` brain into a project and launch the onboarding wizard. A separate set of Python tool scripts lives inside `.agent/tools/` and `.agent/memory/` and handles the review cycle, memory reflection, budget tracking, skill loading, and full-text search. This page documents every command, flag, and argument for all of them.
+
+## Supported harnesses
+
+Pass one of these values as the first argument to any install command.
+
+| Value | Config file installed |
+|---|---|
+| `claude-code` | `CLAUDE.md` + `.claude/settings.json` |
+| `cursor` | `.cursor/rules/agentic-stack.mdc` |
+| `windsurf` | `.windsurfrules` |
+| `opencode` | `AGENTS.md` + `opencode.json` |
+| `openclaw` | `.openclaw-system.md` |
+| `hermes` | `AGENTS.md` |
+| `pi` | `AGENTS.md` + `.pi/skills/` symlink |
+| `standalone-python` | `run.py` |
+
+## Main CLI (`agentic-stack`)
+
+Installed by `brew install agentic-stack`. The binary wraps `install.sh` so all flags pass through.
+
+```bash
+agentic-stack <harness>
+```
+
+Copies the `.agent/` brain and the adapter config into the current directory, then launches the onboarding wizard.
+
+```bash
+# Install the claude-code adapter into the current project
+cd your-project
+agentic-stack claude-code
+```
+
+### Flags
+
+<ParamField path="--yes" type="flag">
+  Accept all wizard defaults without prompting. Sets every preference to its
+  default value and disables all beta features. Safe for CI and scripted
+  environments.
+
+  Short form: `-y`
+
+  ```bash
+  agentic-stack claude-code --yes
+  ```
+</ParamField>
+
+<ParamField path="--reconfigure" type="flag">
+  Re-run the onboarding wizard on a project that already has
+  `.agent/memory/personal/PREFERENCES.md`. Use this to update preferences
+  or toggle beta features after the initial install.
+
+  ```bash
+  agentic-stack claude-code --reconfigure
+  ```
+</ParamField>
+
+<ParamField path="--force" type="flag">
+  Overwrite `PREFERENCES.md` even if it contains customized content. Without
+  this flag, a non-empty `PREFERENCES.md` triggers a backup (`.bak`) and the
+  wizard exits early unless `--reconfigure` is also passed.
+
+  ```bash
+  agentic-stack claude-code --force
+  ```
+</ParamField>
+
+### Upgrade
+
+```bash
+brew update && brew upgrade agentic-stack
+```
+
+## Installer scripts
+
+Use these when installing from a cloned repository instead of Homebrew.
+
+### `install.sh` (macOS / Linux / Git Bash)
+
+```bash
+./install.sh <harness> [project-path] [--yes] [--reconfigure] [--force]
+```
+
+`project-path` defaults to the current directory when omitted.
+
+<ParamField path="harness" type="string" required>
+  One of the harness values in the table above.
+</ParamField>
+
+<ParamField path="project-path" type="string">
+  Absolute or relative path to the target project directory. Defaults to
+  `$PWD`.
+</ParamField>
+
+<ParamField path="--yes / -y" type="flag">
+  Accept all wizard defaults.
+</ParamField>
+
+<ParamField path="--reconfigure" type="flag">
+  Re-run the wizard on an existing project.
+</ParamField>
+
+<ParamField path="--force" type="flag">
+  Overwrite customized `PREFERENCES.md`.
+</ParamField>
+
+```bash
+# Install into the current directory
+./install.sh cursor
+
+# Install into a specific path, accepting all defaults
+./install.sh opencode /home/user/my-project --yes
+```
+
+### `install.ps1` (Windows PowerShell)
+
+```powershell
+.\install.ps1 <harness> [target-dir] [-Yes] [-Reconfigure] [-Force]
+```
+
+<ParamField path="Adapter" type="string" required>
+  One of the harness values in the table above. Note: `pi` is not listed in the
+  PowerShell installer's valid-adapter list.
+</ParamField>
+
+<ParamField path="TargetDir" type="string">
+  Path to the target project directory. Defaults to the current location.
+</ParamField>
+
+<ParamField path="-Yes" type="switch">
+  Accept all wizard defaults.
+</ParamField>
+
+<ParamField path="-Reconfigure" type="switch">
+  Re-run the wizard on an existing project.
+</ParamField>
+
+<ParamField path="-Force" type="switch">
+  Overwrite customized `PREFERENCES.md`.
+</ParamField>
+
+```powershell
+# Clone and install into a Windows project
+git clone https://github.com/codejunkie99/agentic-stack.git
+cd agentic-stack
+.\install.ps1 claude-code C:\path\to\your-project
+```
+
+## Review tools
+
+These tools live in `.agent/tools/` and are called by the host agent during the lesson review cycle. Run them from your project root.
+
+### `list_candidates.py`
+
+List staged candidate lessons sorted by priority.
+
+```bash
+python3 .agent/tools/list_candidates.py
+```
+
+<ParamField path="--status" type="string" default="staged">
+  Filter by lifecycle state. One of: `staged`, `rejected`, `graduated`.
+</ParamField>
+
+<ParamField path="--sort" type="string" default="priority">
+  Sort order. One of: `priority` (cluster size × salience × age) or `age`.
+</ParamField>
+
+<ParamField path="--limit" type="integer" default="0">
+  Maximum number of results. `0` returns all.
+</ParamField>
+
+<ParamField path="--format" type="string" default="human">
+  Output format. One of: `human` or `json`.
+</ParamField>
+
+```bash
+# Show all staged candidates as JSON
+python3 .agent/tools/list_candidates.py --format json
+
+# Show the top 5 by age
+python3 .agent/tools/list_candidates.py --sort age --limit 5
+```
+
+### `graduate.py`
+
+Accept a candidate lesson and write it to semantic memory.
+
+```bash
+python3 .agent/tools/graduate.py <candidate_id> --rationale "..."
+```
+
+<ParamField path="candidate_id" type="string" required>
+  The ID of the staged candidate to graduate. Obtain from `list_candidates.py`.
+</ParamField>
+
+<ParamField path="--rationale" type="string" required>
+  Explanation of why the lesson is worth keeping. Required — graduation without
+  a rationale is structurally blocked.
+</ParamField>
+
+<ParamField path="--reviewer" type="string" default="host-agent">
+  Identity of the reviewer recorded in the decision log.
+</ParamField>
+
+<ParamField path="--provisional" type="flag">
+  Accept as provisional (probationary) rather than fully accepted.
+</ParamField>
+
+<ParamField path="--supersedes" type="string">
+  ID of an existing lesson this graduation replaces.
+</ParamField>
+
+```bash
+python3 .agent/tools/graduate.py abc123 \
+  --rationale "evidence holds across 4 sessions, aligns with PREFERENCES"
+```
+
+### `reject.py`
+
+Reject a candidate and move it to the `rejected/` pool. The decision history is preserved; if the same pattern is staged again, `rejection_count` will show the churn.
+
+```bash
+python3 .agent/tools/reject.py <candidate_id> --reason "..."
+```
+
+<ParamField path="candidate_id" type="string" required>
+  The ID of the staged candidate to reject.
+</ParamField>
+
+<ParamField path="--reason" type="string" required>
+  Explanation for the rejection. Required.
+</ParamField>
+
+<ParamField path="--reviewer" type="string" default="host-agent">
+  Identity of the reviewer recorded in the decision log.
+</ParamField>
+
+```bash
+python3 .agent/tools/reject.py abc123 \
+  --reason "too specific to one debugging session, won't generalize"
+```
+
+### `reopen.py`
+
+Move a previously rejected candidate back to the staged pool for re-review.
+
+```bash
+python3 .agent/tools/reopen.py <candidate_id>
+```
+
+<ParamField path="candidate_id" type="string" required>
+  The ID of the rejected candidate to requeue.
+</ParamField>
+
+<ParamField path="--reviewer" type="string" default="host-agent">
+  Identity of the reviewer recorded in the decision log.
+</ParamField>
+
+```bash
+python3 .agent/tools/reopen.py abc123
+```
+
+## Memory tools
+
+### `memory_reflect.py`
+
+Log a significant action or failure to episodic memory (`AGENT_LEARNINGS.jsonl`). Called automatically by skills; also usable directly from the command line.
+
+```bash
+python3 .agent/tools/memory_reflect.py <skill> <action> <outcome> [flags]
+```
+
+<ParamField path="skill" type="string" required>
+  Name of the skill that performed the action.
+</ParamField>
+
+<ParamField path="action" type="string" required>
+  Short label for what was done.
+</ParamField>
+
+<ParamField path="outcome" type="string" required>
+  Result or description of the outcome.
+</ParamField>
+
+<ParamField path="--fail" type="flag">
+  Mark the entry as a failure. Triggers the `on_failure` hook instead of
+  `log_execution`.
+</ParamField>
+
+<ParamField path="--importance" type="integer" default="5">
+  Salience score for the entry (used when ranking retrieval).
+</ParamField>
+
+<ParamField path="--note" type="string">
+  Free-text reflection attached to the entry.
+</ParamField>
+
+<ParamField path="--confidence" type="float">
+  Confidence level for the outcome (0.0–1.0). Defaults to 0.5 on success,
+  0.9 on failure when omitted.
+</ParamField>
+
+<ParamField path="--evidence" type="string[]">
+  Space-separated episode or lesson IDs this entry builds on.
+</ParamField>
+
+```bash
+python3 .agent/tools/memory_reflect.py git-proxy "push to main" "rejected by hook" \
+  --fail --note "pre_tool_call blocked force push" --importance 8
+```
+
+### `budget_tracker.py`
+
+Estimate context token usage for a given prompt.
+
+```bash
+python3 .agent/tools/budget_tracker.py "<action>"
+```
+
+```bash
+python3 .agent/tools/budget_tracker.py "refactor authentication module"
+# outputs: tokens_used, chars, budget, headroom
+```
+
+### `skill_loader.py`
+
+Progressive skill loader — the manifest always loads; the full `SKILL.md` only loads when a trigger phrase matches. Not typically called directly; used internally by the harness conductor.
+
+```bash
+# Load the skill programmatically from a shell (returns nothing — used as a library)
+python3 -c "
+import sys; sys.path.insert(0, '.agent/tools')
+from skill_loader import progressive_load
+skills = progressive_load('deploy to production')
+for s in skills: print(s['name'])
+"
+```
+
+### `auto_dream.py`
+
+Run the nightly staging cycle: cluster episodic entries, extract candidate patterns, apply the heuristic prefilter, decay old episodes, archive stale workspace files, and write `REVIEW_QUEUE.md`.
+
+```bash
+python3 .agent/memory/auto_dream.py
+```
+
+<Note>
+  `auto_dream.py` performs only mechanical file operations — no reasoning, no
+  network calls, no git commits. It is safe to run unattended. The recommended
+  schedule is nightly via cron:
+
+  ```bash
+  0 3 * * * python3 /path/to/project/.agent/memory/auto_dream.py \
+    >> /path/to/project/.agent/memory/dream.log 2>&1
+  ```
+</Note>
+
+### `memory_search.py` (BETA)
+
+Full-text keyword search over all `.md` and `.jsonl` memory documents. Requires the `memory_search_fts` feature to be enabled in `.agent/memory/.features.json`.
+
+```bash
+python3 .agent/memory/memory_search.py "<query>"
+python3 .agent/memory/memory_search.py --status
+python3 .agent/memory/memory_search.py --rebuild
+```
+
+<ParamField path="query" type="string">
+  Keyword query. Uses SQLite FTS5 when available, falls back to ripgrep (`rg`),
+  then `grep`.
+</ParamField>
+
+<ParamField path="--status" type="flag">
+  Show whether the feature is enabled, the current search mode (FTS5 or
+  fallback), and index statistics. Always works even when the feature is
+  disabled.
+</ParamField>
+
+<ParamField path="--rebuild" type="flag">
+  Force a full rebuild of the FTS5 index. Requires FTS5 to be available and
+  the feature to be enabled.
+</ParamField>
+
+```bash
+# Search memory for notes about a deploy failure
+python3 .agent/memory/memory_search.py "deploy failure"
+
+# Check whether the feature is on and what mode is active
+python3 .agent/memory/memory_search.py --status
+
+# Force a full index rebuild
+python3 .agent/memory/memory_search.py --rebuild
+```
+
+<Tip>
+  Enable memory search during onboarding or at any time by running
+  `agentic-stack <harness> --reconfigure`, or by editing
+  `.agent/memory/.features.json` directly and setting
+  `"memory_search_fts": {"enabled": true}`.
+</Tip>

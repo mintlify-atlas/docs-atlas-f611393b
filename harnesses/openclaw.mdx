@@ -1,0 +1,117 @@
+---
+title: "OpenClaw harness guide for the agentic-stack brain"
+description: "Install the agentic-stack brain into OpenClaw via a system-prompt include, with notes on the v0.6.0 rename from OpenClient and fork-specific configuration."
+---
+
+The OpenClaw adapter installs a single system-prompt include file, `.openclaw-system.md`, that you point OpenClaw at in its configuration. Unlike harnesses with a fixed project-root convention file, OpenClaw requires you to explicitly wire the file as the system prompt — either by pointing the config at it or by pasting its contents directly into OpenClaw's prompt settings. Hook support varies by fork.
+
+<Warning>
+**Breaking change in v0.6.0.** The adapter was previously named OpenClient. The installed file was renamed from `.openclient-system.md` to `.openclaw-system.md`. If you have an existing OpenClient installation, re-run `./install.sh openclaw` to write the correctly named file. OpenClaw will not load `.openclient-system.md`.
+</Warning>
+
+## What gets installed
+
+| File | Purpose |
+|---|---|
+| `.openclaw-system.md` | System-prompt include; instructs the agent to treat `.agent/` as authoritative |
+
+## Supported harnesses reference
+
+| Harness | Config file | Hook support |
+|---|---|---|
+| **Claude Code** | `CLAUDE.md` + `.claude/settings.json` | yes (PostToolUse, Stop) |
+| **Cursor** | `.cursor/rules/*.mdc` | no (manual reflect calls) |
+| **Windsurf** | `.windsurfrules` | no (manual reflect calls) |
+| **OpenCode** | `AGENTS.md` + `opencode.json` | partial (permission rules) |
+| **OpenClaw** | system-prompt include | varies by fork |
+| **Hermes Agent** | `AGENTS.md` (agentskills.io compatible) | partial (own memory) |
+| **Pi Coding Agent** | `AGENTS.md` + `.pi/skills/` | no (extension system) |
+| **Standalone Python** | `run.py` (any LLM) | yes (full control) |
+
+## Install steps
+
+<Steps>
+  <Step title="Run the installer">
+    From your project root, run the adapter installer. This copies `config.md` from the adapter source to `.openclaw-system.md` in your project root and runs the onboarding wizard.
+
+    <CodeGroup>
+
+    ```bash macOS / Linux
+    ./install.sh openclaw
+    ```
+
+    ```powershell Windows
+    .\install.ps1 openclaw C:\path\to\your-project
+    ```
+
+    </CodeGroup>
+  </Step>
+  <Step title="Load the file as OpenClaw's system prompt">
+    OpenClaw does not auto-discover `.openclaw-system.md` — you must wire it explicitly. Two options are available depending on your fork or version:
+
+    **Option A (recommended) — point the config at the file:**
+
+    In your OpenClaw configuration, set the system prompt source to the file path:
+
+    ```
+    .openclaw-system.md
+    ```
+
+    The exact config key varies by fork; check your version's documentation.
+
+    **Option B — paste the contents directly:**
+
+    Open `.openclaw-system.md`, copy the full contents, and paste them into OpenClaw's system prompt settings field.
+  </Step>
+  <Step title="Verify the wiring">
+    Ask OpenClaw:
+
+    ```
+    Read my lessons file.
+    ```
+
+    It should open `.agent/memory/semantic/LESSONS.md`. If it does, the system prompt include is active.
+  </Step>
+</Steps>
+
+## How it works
+
+OpenClaw does not enforce a project-root convention file. Instead, you load `.openclaw-system.md` as the system prompt (or include it in the system prompt). The file's content mirrors the other adapters: read `.agent/` first, respect permissions, log after actions.
+
+Because OpenClaw's system prompt is loaded once at session start and is not tied to tool calls, memory logging is instruction-driven. The system prompt instructs the agent to call `memory_reflect.py` after significant actions.
+
+## Memory logging
+
+Hook support varies by fork. In most OpenClaw deployments there is no native post-tool event, so logging is instruction-driven. Call `memory_reflect.py` manually from the terminal to record observations outside of a model-driven reflect call:
+
+```bash
+python3 .agent/tools/memory_reflect.py openclaw manual ok
+```
+
+Run the dream cycle manually or on a cron schedule to stage candidate lessons:
+
+```bash
+python3 .agent/memory/auto_dream.py
+```
+
+## Customizing the system prompt file
+
+Edit `.openclaw-system.md` directly to change what the agent reads at session start. The file is plain Markdown. If you paste the contents into OpenClaw's settings, remember to re-paste after making changes — the in-settings version is a copy, not a live reference.
+
+<Note>
+Some OpenClaw forks support a `.openclaw/` folder for multi-file configuration. If your version supports this, check its documentation for how to reference `.agent/` from within that structure. The content of `.openclaw-system.md` can serve as the primary instruction file in any folder-based layout.
+</Note>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Agent doesn't follow the system prompt instructions">
+    Confirm the file is actually being loaded. Some OpenClaw forks require an explicit file path in the config and do not auto-discover files from the project root. Check whether your fork requires `--system-prompt` flag, a config key, or manual paste — auto-discovery is not universal.
+  </Accordion>
+  <Accordion title="File from v0.5.x (.openclient-system.md) is still present">
+    The old file is inert — OpenClaw will not load it unless you explicitly point the config at it. After running `./install.sh openclaw`, update any config references from `.openclient-system.md` to `.openclaw-system.md`. You can safely delete the old file once the new one is wired.
+  </Accordion>
+  <Accordion title="Correct file is present but OpenClaw ignores it">
+    Verify the path you gave to OpenClaw is relative to the directory it was launched from, not relative to a different root. If OpenClaw is running from a different working directory than your project root, use an absolute path or launch it from the project root.
+  </Accordion>
+</AccordionGroup>

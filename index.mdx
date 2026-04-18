@@ -1,97 +1,96 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "agentic-stack: One brain, many harnesses"
+description: "One brain for every harness: memory, skills, and protocols in a portable .agent/ folder that works with Claude Code, Cursor, Windsurf, and five more."
 ---
 
-## Setting up
+agentic-stack gives your AI coding assistant a persistent, portable brain. Drop the `.agent/` folder into any project and your agent gets four memory layers, five seed skills, enforced protocols, and a nightly learning cycle — all without being tied to any single harness.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install in under two minutes and run the onboarding wizard.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="How it works" icon="brain" href="/how-it-works">
+    Understand memory layers, skill loading, and the feedback loop.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Harness guides" icon="plug" href="/harnesses/claude-code">
+    Step-by-step setup for Claude Code, Cursor, Windsurf, and five more harnesses.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="CLI reference" icon="terminal" href="/reference/cli-commands">
+    Every command, flag, and tool script documented with real examples.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What agentic-stack gives you
 
-Everything you need to create world-class documentation.
+agentic-stack is not just a folder template — it ships the files that go *inside* the folder: seed skills, memory management scripts, protocol files, and adapter shims for eight harnesses.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="Memory system" icon="database" href="/memory/overview">
+    Four layers — working, episodic, semantic, personal — each with its own retention policy and query-aware retrieval.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Dream cycle" icon="moon" href="/memory/dream-cycle">
+    Nightly clustering of episodic events into reviewable candidate lessons, with no unattended reasoning.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Review protocol" icon="clipboard-check" href="/memory/review-protocol">
+    Host-agent CLI tools to accept, reject, or requeue candidate lessons — rationale required.
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="Skills" icon="bolt" href="/skills/overview">
+    Progressive disclosure: a lightweight manifest is always in context; full skill files load only on trigger match.
   </Card>
-</Columns>
+</CardGroup>
 
-## Need inspiration?
+## Supported harnesses
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+agentic-stack works with all major AI coding environments through adapter shims that require no changes to the `.agent/` folder itself.
+
+<CardGroup cols={2}>
+  <Card title="Claude Code" icon="c" href="/harnesses/claude-code">
+    Full hook support — PostToolUse and Stop events drive automatic memory logging.
+  </Card>
+  <Card title="Cursor" icon="arrow-pointer" href="/harnesses/cursor">
+    Always-apply `.mdc` rule file with manual reflect calls for memory logging.
+  </Card>
+  <Card title="Windsurf" icon="wind" href="/harnesses/windsurf">
+    Single `.windsurfrules` file keeps the brain in context on every session.
+  </Card>
+  <Card title="OpenCode" icon="code" href="/harnesses/opencode">
+    `AGENTS.md` + `opencode.json` with partial permission rule support.
+  </Card>
+  <Card title="OpenClaw" icon="claw-marks" href="/harnesses/openclaw">
+    System-prompt include adapter for OpenClaw forks.
+  </Card>
+  <Card title="Hermes" icon="envelope" href="/harnesses/hermes">
+    agentskills.io-compatible `AGENTS.md` with partial memory integration.
+  </Card>
+  <Card title="Pi Coding Agent" icon="pi" href="/harnesses/pi">
+    `AGENTS.md` + `.pi/skills` symlink for zero-duplication skill sharing.
+  </Card>
+  <Card title="Standalone Python" icon="python" href="/harnesses/standalone-python">
+    DIY conductor entrypoint — any LLM, full hook control.
+  </Card>
+</CardGroup>
+
+## Get started in three steps
+
+<Steps>
+  <Step title="Install">
+    ```bash
+    brew tap codejunkie99/agentic-stack https://github.com/codejunkie99/agentic-stack
+    brew install agentic-stack
+    ```
+  </Step>
+  <Step title="Pick your harness">
+    ```bash
+    cd your-project
+    agentic-stack claude-code
+    # or: cursor | windsurf | opencode | openclaw | hermes | pi | standalone-python
+    ```
+  </Step>
+  <Step title="Complete the onboarding wizard">
+    Answer six questions about your workflow preferences. The wizard writes `.agent/memory/personal/PREFERENCES.md` — the first file your AI reads every session.
+  </Step>
+</Steps>
+
+<Tip>
+  Run `agentic-stack claude-code --yes` to skip the wizard and accept all defaults — useful in CI or when setting up multiple projects quickly.
+</Tip>
